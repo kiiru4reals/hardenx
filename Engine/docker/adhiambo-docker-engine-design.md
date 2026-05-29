@@ -73,19 +73,38 @@ adhiambo.sh (entrypoint & orchestrator)
 
 ## 4. Configuration (`config.sh`)
 
-All engine behaviour is driven by `config.sh`. The following variables are required:
+All engine behaviour is driven by `config.sh`. It is sourced at startup by every engine and reporting component before any other action. Changing a value here updates the behaviour of all components simultaneously.
 
-| Variable | Description |
-|---|---|
-| `BASE_DIR` | Root directory for Adhiambo |
-| `IMAGES_DIR` | Directory containing TAR image archives |
-| `IMPORT_DIR` | Directory for importing external TAR archives |
-| `REPORTS_DIR` | Root directory for all assessment output |
-| `DOCKER_BENCH_DIR` | Path to Docker Bench for Security installation |
-| `SCANNERS` | Trivy scanner types to enable (e.g. `vuln,secret,misconfig`) |
-| `SEVERITIES` | Severity filter for Trivy (e.g. `CRITICAL,HIGH,MEDIUM,LOW`) |
-| `IGNORE_UNFIXED` | Whether to suppress unfixed vulnerabilities (`true` / `false`) |
-| `HTML_TEMPLATE` | Optional path to a Trivy HTML template for fallback HTML generation |
+### Path Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `BASE_DIR` | `$HOME/Documents/docker-projects/hardenx` | Root project directory |
+| `IMAGES_DIR` | `$BASE_DIR/images` | Directory containing TAR image archives |
+| `IMPORT_DIR` | `/media/sf_Documents` | Optional external import directory (e.g. VirtualBox shared folder). TAR files placed here are copied to `IMAGES_DIR` automatically. |
+| `REPORTS_DIR` | `$BASE_DIR/reports` | Root directory for all per-image assessment output |
+| `COMPLIANCE_REPORTS_DIR` | `$BASE_DIR/reports/compliance` | Directory for standalone compliance report output |
+| `DOCKER_BENCH_DIR` | `$HOME/tools/docker-bench-security` | Path to Docker Bench for Security installation. Note: this points to the user's home directory tools folder, not inside the project bundle. |
+
+### Scanner Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `SCANNERS` | `vuln,secret,misconfig` | Trivy scanner types to enable. Supported values: `vuln`, `secret`, `misconfig`, `license`. |
+| `SEVERITIES` | `CRITICAL,HIGH,MEDIUM,LOW` | Severity levels to include in Trivy reports. Supported values: `UNKNOWN`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. |
+| `IGNORE_UNFIXED` | `true` | Suppress vulnerabilities that do not yet have an available fix. |
+| `HTML_TEMPLATE` | *(empty)* | Optional path to a Trivy HTML template for fallback HTML generation. Leave empty to disable. |
+
+### Runtime State
+
+| Variable | Default | Description |
+|---|---|---|
+| `CURRENT_ASSESSMENT_NAME` | *(empty)* | Set at runtime by `reporter.sh` when an assessment directory is initialised. |
+| `CURRENT_ASSESSMENT_DIR` | *(empty)* | Set at runtime by `reporter.sh`. Full path to the active assessment directory. |
+| `QUIET` | `false` | Set to `true` by the `-q` flag at invocation. Suppresses console output. |
+| `VERBOSE` | `false` | Set to `true` by the `-v` flag at invocation. Enables debug output, overrides quiet mode. |
+
+> **Open Item 12:** There is no `CONTROLS_LIBRARY` variable in `config.sh`. The controls library path is currently hardcoded in `engine_docker_cis.sh`. A `CONTROLS_LIBRARY` variable should be added to `config.sh` to make the path configurable and consistent with how all other paths are managed.
 
 If any required variable is missing or empty at startup, the engine exits with an explicit error identifying the missing variable.
 
@@ -129,40 +148,59 @@ If a Docker Bench check ID has no corresponding entry in the controls library, t
 
 ### 6.1 Invocation
 
-The engine is invoked through the main `hardenx` entrypoint. The following CLI flags are supported:
+`cis_checks.sh` is the Docker engine entry point. It is invoked by `adhiambo.sh` when Docker checks are part of the scan scope, and can also be run standalone by an operator for Docker-only assessments.
 
+**Invoked by Adhiambo:**
 ```bash
-./hardenx [OPTIONS]
-
-Options:
-  -A    Full Security Assessment — runs Trivy and Docker CIS engine, produces consolidated reports
-  -V    Vulnerability Scan — runs Trivy only
-  -C    Docker CIS Compliance Scan — runs Docker Bench for Security only
-  -q    Quiet mode — suppresses console output
-  -v    Verbose mode — enables debug output, overrides quiet mode
-  -h    Help — displays usage information and exits
+# adhiambo.sh calls cis_checks.sh internally when Docker is in scope
+bash adhiambo.sh --tech docker
 ```
 
-**Default behaviour:** If invoked with no arguments, `hardenx` runs in interactive mode and presents a scan mode selection menu.
+**Standalone invocation:**
+```bash
+./cis_checks.sh [OPTIONS]
+
+Options:
+  -V, --vulnerability-scan    Vulnerability Scan — runs Trivy only
+  -C, --docker-cis            Docker CIS Compliance Scan — runs Docker Bench for Security only
+  -A, --full-assessment       Full Security Assessment — runs Trivy and Docker CIS, produces consolidated reports
+  -q, --quiet                 Quiet mode — suppresses console output
+  -v, --verbose               Verbose mode — enables debug output, overrides quiet mode
+  -H, -h, --help              Display usage information and exit
+```
+
+**Default behaviour:** If invoked with no arguments, `cis_checks.sh` runs in interactive mode and presents a scan mode selection menu defaulting to option 3 (Full Security Assessment).
 
 ```bash
 # Interactive mode — presents scan mode menu
-./hardenx
+./cis_checks.sh
 
 # Full Security Assessment, quiet output
-./hardenx -A -q
+./cis_checks.sh -A -q
+./cis_checks.sh --full-assessment --quiet
 
 # Vulnerability scan only
-./hardenx -V
+./cis_checks.sh -V
+./cis_checks.sh --vulnerability-scan
 
 # Docker CIS compliance scan only
-./hardenx -C
+./cis_checks.sh -C
+./cis_checks.sh --docker-cis
 
 # Verbose output for debugging
-./hardenx -v
+./cis_checks.sh -v
+./cis_checks.sh --verbose
 ```
 
-> **Note:** The `-A` Full Security Assessment mode still prompts the operator interactively for image selection. Fully non-interactive CI mode is tracked as Open Item 6.
+**Internal `SCAN_MODE` values:** The selected mode is stored in the `SCAN_MODE` variable and used by the engine dispatcher:
+
+| Flag | `SCAN_MODE` value |
+|---|---|
+| `-V` / `--vulnerability-scan` | `vulnerability-scan` |
+| `-C` / `--docker-cis` | `docker-cis` |
+| `-A` / `--full-assessment` | `full-assessment` |
+
+> **Note:** The `-A` / `--full-assessment` mode still prompts the operator interactively for image selection. Fully non-interactive CI mode is tracked as Open Item 6.
 
 ### 6.2 Assessment Directory
 
@@ -437,57 +475,81 @@ Provides shared helper functions used across all engine and reporting components
 
 The engine supports two runtime output modes controlled by CLI flags:
 
-| Flag | Mode | Behaviour |
-|---|---|---|
-| *(none)* | Normal | All log output and banners printed to console |
-| `-q` | Quiet | Suppresses all console output; logs still written to file |
-| `-v` | Verbose | Enables debug output; overrides quiet mode |
+| Short Flag | Long Flag | Mode | Behaviour |
+|---|---|---|---|
+| *(none)* | *(none)* | Normal | All log output and banners printed to console |
+| `-q` | `--quiet` | Quiet | Suppresses all console output; logs still written to file. Banner is suppressed unless verbose mode is also active. Final report location line is always shown regardless of quiet mode. |
+| `-v` | `--verbose` | Verbose | Enables debug output; overrides quiet mode |
 
-Quiet and verbose modes are set at `hardenx` invocation and propagated to all engines via the `QUIET` and `VERBOSE` environment variables.
+Quiet and verbose modes are set at `cis_checks.sh` invocation and propagated to all engines and reporting components via the `QUIET` and `VERBOSE` variables initialised in `config.sh`.
 
 ---
 
 ## 12. Component Flow
 
 ```
-./hardenx [-A | -V | -C] [-q | -v]
+adhiambo.sh (Adhiambo platform orchestrator)
         │
-        ├── [Pre-flight]
-        │     ├── Validate config.sh variables
-        │     └── Ensure required directories exist
-        │
-        ├── [Report Format Selection]
-        │     └── reporter.sh → select_report_format()
-        │
-        ├── [-V or -A: Vulnerability Scan]
-        │     ├── engine_trivy_wrapper.sh
-        │     │     └── engine_trivy.sh
-        │     │           ├── install_missing_dependencies() — trivy, jq, zip
-        │     │           ├── load_images() — Docker daemon + TAR files
-        │     │           ├── select_images() — interactive selection
-        │     │           └── run_scan() per selected image
-        │     │                 ├── init_assessment_dir()
-        │     │                 ├── trivy image --format json
-        │     │                 ├── generate_csv()
-        │     │                 ├── generate_summary()
-        │     │                 └── generate_vulnerability_html.py
-        │     └── Preserve CURRENT_ASSESSMENT_DIR (wrapper)
-        │
-        ├── [-C or -A: Docker CIS Compliance Scan]
-        │     └── engine_docker_cis.sh
-        │           ├── Validate DOCKER_BENCH_DIR
-        │           ├── Reuse or create assessment directory
-        │           ├── Rebuild ALL_ASSESSMENT_DIRS from REPORTS_DIR
-        │           ├── sudo bash docker-bench-security.sh → .log
-        │           ├── generate_docker_cis_csv.py → .csv, .json, summary.csv
-        │           ├── generate_docker_cis_html.py → .html
-        │           ├── package_reports() → .zip
-        │           └── Replicate artifacts to all assessment directories
-        │
-        └── [-A: Consolidated Reporting — if REPORT_FORMAT = excel or both]
-              └── reporter.sh → generate_excel_report()
-                    ├── excel_reporter.py → <assessment>.xlsx
-                    └── full_assessment_html.py → <assessment>.html
+        └── cis_checks.sh (Docker engine entry point)
+                │
+                ├── [Startup]
+                │     ├── parse_args() — set SCAN_MODE, QUIET, VERBOSE
+                │     ├── show_banner() — suppressed if QUIET=true
+                │     ├── Source config.sh
+                │     └── Source utils.sh, reporter.sh, exporter.sh, engine_trivy_wrapper.sh
+                │
+                ├── [Interactive Menu — if no SCAN_MODE provided]
+                │     └── interactive_menu() — prompts operator, defaults to full-assessment
+                │
+                ├── [Report Format Selection]
+                │     └── select_report_format() — prompts once, reused across engines
+                │
+                ├── [Engine Dispatcher — run_selected_engines()]
+                │     │
+                │     ├── [-V: vulnerability-scan]
+                │     │     └── run_trivy_engine()
+                │     │           └── engine_trivy.sh (subprocess)
+                │     │                 ├── install_missing_dependencies() — trivy, jq, zip
+                │     │                 ├── load_images() — Docker daemon + TAR files
+                │     │                 ├── select_images() — interactive selection
+                │     │                 └── run_scan() per selected image
+                │     │                       ├── init_assessment_dir()
+                │     │                       ├── trivy image --format json
+                │     │                       ├── generate_csv()
+                │     │                       ├── generate_summary()
+                │     │                       └── generate_vulnerability_html.py
+                │     │
+                │     ├── [-C: docker-cis]
+                │     │     ├── Source engine_docker_cis.sh (lazy loaded)
+                │     │     └── run_docker_cis_engine()
+                │     │           ├── Validate DOCKER_BENCH_DIR
+                │     │           ├── Reuse or create assessment directory
+                │     │           ├── Rebuild ALL_ASSESSMENT_DIRS from REPORTS_DIR
+                │     │           ├── sudo bash docker-bench-security.sh → .log
+                │     │           ├── generate_docker_cis_csv.py → .csv, .json, summary.csv
+                │     │           ├── generate_docker_cis_html.py → .html
+                │     │           ├── package_reports() → .zip
+                │     │           └── Replicate artifacts to all assessment directories
+                │     │
+                │     └── [-A: full-assessment]
+                │           ├── run_trivy_engine() || true
+                │           │     Note: Trivy failure does not abort the full assessment.
+                │           │     The CIS engine runs regardless.
+                │           ├── Save CURRENT_ASSESSMENT_DIR and CURRENT_ASSESSMENT_NAME
+                │           ├── Source engine_docker_cis.sh (lazy loaded)
+                │           ├── Restore CURRENT_ASSESSMENT_DIR and CURRENT_ASSESSMENT_NAME
+                │           └── run_docker_cis_engine()
+                │
+                ├── [Post-Engine]
+                │     ├── Rebuild ALL_ASSESSMENT_DIRS from REPORTS_DIR (excluding compliance/)
+                │     └── Recover CURRENT_ASSESSMENT_DIR if unset (newest directory fallback)
+                │
+                ├── [Excel Report Generation]
+                │     ├── Multiple images → generate_excel_report() per assessment directory
+                │     └── Single image  → generate_excel_report() for CURRENT_ASSESSMENT_DIR
+                │
+                └── [Final Output — always shown regardless of quiet mode]
+                      └── "Reports are stored under: $REPORTS_DIR"
 ```
 
 ---
@@ -526,7 +588,7 @@ While Adhiambo v1 is a manually invoked tool, the engine is designed to be autom
 ```yaml
 # Example GitHub Actions step
 - name: Run Adhiambo Security Assessment
-  run: ./hardenx -A -q
+  run: ./cis_checks.sh -A -q
 
 - name: Archive Reports
   uses: actions/upload-artifact@v3
@@ -547,8 +609,8 @@ Full non-interactive CI mode with flag-based image selection is a candidate for 
 - `openpyxl` Python package must be installed for Excel report generation.
 - `jq` and `zip` must be available for Trivy report packaging.
 - `rsync` must be available for optional TAR archive imports.
-- Docker Bench for Security must be cloned into `tools/docker-bench-security/` before running compliance scans.
-- The controls library CSV file must be present at the path configured in `config.sh`. If absent, compliance report generation will fail.
+- Docker Bench for Security must be cloned into `$HOME/tools/docker-bench-security/` before running compliance scans. The path is configurable via `DOCKER_BENCH_DIR` in `config.sh`.
+- The controls library CSV file must be present at the path configured in `config.sh`. If absent, compliance report generation will fail. The path is currently hardcoded — see Open Item 12.
 - Trivy is installed interactively if not found. If installation is declined, vulnerability scanning does not run.
 - Full Security Assessment mode (`-A`) still prompts the operator for image selection. It is not fully non-interactive.
 - Vulnerability-only scans (`-V`) support multiple images. Full Security Assessment (`-A`) supports one image per run.
@@ -562,8 +624,8 @@ Full non-interactive CI mode with flag-based image selection is a candidate for 
 |---|---|---|---|
 | 1 | **SBOM generation** — Trivy supports CycloneDX and SPDX SBOM output. This is not yet implemented. Add `trivy image --format cyclonedx` as an output step in `engine_trivy.sh` and reference the SBOM path in the compliance report. | Engineering | Open |
 | 2 | **Registry login/logout flow** — no authentication flow exists for private registries (ECR, GCR, GHCR, Harbor). Currently only images already pulled locally or via manual `docker pull` are supported. Implement registry detection and per-registry login/logout as defined in earlier design iterations. | Engineering | Open |
-| 3 | **CIS level filtering** — Docker Bench for Security runs all checks by default. Level 1 vs Level 2 check distinction is not implemented. Implement level filtering during result parsing in `generate_docker_cis_csv.py` and expose via a `-l <1|2>` flag on `hardenx`. | Engineering | Open |
-| 4 | **`-h` help flag** — the `-h` flag is listed in the CLI options but the full help menu content is not yet defined. Define the help output for `hardenx -h` covering all flags, defaults, and examples. | Engineering | Open |
+| 3 | **CIS level filtering** — Docker Bench for Security runs all checks by default. Level 1 vs Level 2 check distinction is not implemented. Implement level filtering during result parsing in `generate_docker_cis_csv.py` and expose via a `-l <1|2>` flag on `cis_checks.sh`. | Engineering | Open |
+| 4 | **`-h` help flag** — the `-h` flag is listed in the CLI options but the full help menu content is not yet defined. Define the help output for `cis_checks.sh -h` covering all flags, defaults, and examples. | Engineering | Open |
 | 5 | **Docker daemon pre-flight check** — no check for containerd-only environments. Add daemon detection before Docker Bench execution with an informative exit message. | Engineering | Open |
 | 6 | **Non-interactive / CI mode** — `-A` Full Security Assessment still prompts for image selection. A fully non-interactive mode with flag-based image specification is needed for CI/CD pipeline use. `--all` / `-a` flag for scanning all images is partially implemented. | Engineering | Open |
 | 7 | **Status model alignment** — the Docker engine uses native Docker Bench status values (PASS, WARN, INFO, NOTE). The Adhiambo-wide model uses PASS, FAIL, N/A, SKIPPED, MANUAL_REVIEW. Alignment should be implemented in `generate_docker_cis_csv.py` once the broader Adhiambo status model is ratified across all engines. | Security team | Open |
@@ -571,7 +633,7 @@ Full non-interactive CI mode with flag-based image selection is a candidate for 
 | 9 | **Monitor Docker Bench for Security for CIS Docker Benchmark v1.8.0 support.** Upgrade benchmark version and revalidate controls library and section mapping once available. | Engineering | Open |
 | 10 | **`--output-dir` flag** — output directory is currently hardcoded via `REPORTS_DIR` in `config.sh`. Add an output directory flag to allow the operator to specify it at invocation time. | Engineering | Open |
 | 11 | **Reporter decoupling** — the reporting layer is currently tightly coupled to the Docker engine. The intended direction is a standalone reporter component reusable across all five engines. When this is prioritised, a decision must be made on whether to adopt the current Docker reporting implementation as the foundation or rebuild to a new specification. No changes should be made to the current output schemas or file naming conventions until that decision is made. | Engineering | Open |
-| 12 | **Controls library location** — the controls library CSV file is referenced in `engine_docker_cis.sh` but there is no confirmed project directory for it. Confirm the file location, add it to the project structure, and update `config.sh` with the correct path. | Engineering | Open |
+| 12 | **Controls library location and configuration** — the controls library CSV path is hardcoded in `engine_docker_cis.sh` as `$SCRIPT_DIR/../data/docker-cis-controls.csv` but there is no `data/` directory in the current project structure and no corresponding variable in `config.sh`. Two actions required: (1) confirm the file location and add it to the project, (2) add a `CONTROLS_LIBRARY` variable to `config.sh` so the path is configurable like all other paths. | Engineering | Open |
 
 ---
 
