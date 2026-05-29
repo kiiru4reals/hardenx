@@ -1,2 +1,55 @@
 Researcher/*.json
 Orchestrator/*.json
+
+*/reports/
+*.csv
+*.json
+*.html
+*.xlsx
+*.zip
+*.log
+
+Engine/docker/images/
+*.tar
+
+Engine/*/logs/
+scan.log
+*.tmp
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+*.bak
+*.orig
+*.rej
+
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.kubeconfig
+config.local.sh
+
+tools/docker-bench-security/results/
+tools/docker-bench-security/*.log
+
+# ----------------------------------------------------------------------------
+# Optional: Keep Directory Structure in Git
+# ----------------------------------------------------------------------------
+# If you want Git to track empty directories, create:
+#   reports/.gitkeep
+#   images/.gitkeep
+#
+# Then uncomment the following lines:
+#
+# !reports/.gitkeep
+# !images/.gitkeep
