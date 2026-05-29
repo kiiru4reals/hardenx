@@ -1,605 +1,578 @@
 # Adhiambo — Docker Engine Design Document
-### Component: `engine/docker.sh` + `reporter_docker.sh`
-**Benchmark Reference:** CIS Docker Benchmark v1.8.0
-**Docker Server Support:** v28 and above
-**Status:** Design — Pre-Implementation
-**Version:** 0.1
+### Component: `engine/docker.sh` + Reporting Layer
+**Benchmark Reference:** CIS Docker Benchmark v1.6.0
+**Check Engine:** Docker Bench for Security
+**Image Scanner:** Trivy
+**Docker Server Support:** v1.13.0 and above
+**Status:** Implemented — v2.0.0-alpha
+**Version:** 0.4
 
 ---
 
 ## 1. Purpose
 
-This document defines the design for the Adhiambo Docker Engine (`engine/docker.sh`) and its accompanying temporary reporting helper (`reporter_docker.sh`). The Docker Engine implements automated CIS Benchmark v1.8.0 compliance checks, split across Level 1 and Level 2, against a target Docker environment.
+This document defines the design for the Adhiambo Docker Engine and its reporting layer. The Docker Engine implements CIS Benchmark v1.6.0 compliance checks by delegating check execution to **Docker Bench for Security**, and uses **Trivy** for image vulnerability scanning. The reporting layer is implemented across a set of Bash and Python components that produce structured output in multiple formats.
 
-The reporting helper is a stopgap component produced ahead of the main Adhiambo Reporter (`reporter.sh`) and will be retired once the main Reporter is ready. It mirrors the intended Reporter interface to ensure a clean handover.
+This document reflects the current implemented state of the engine. Open items at the end of this document capture features that are designed but not yet implemented and should be used to generate tracked issues.
 
 ---
 
-## 2. Invocation
+## 2. Role in the Architecture
 
-The Docker Engine is invoked from the main `adhiambo.sh` entrypoint or directly by the operator. The following flags are supported:
+```
+adhiambo.sh (entrypoint & orchestrator)
+        │
+        ├── [Docker CIS Compliance]
+        │     └── engine_docker_cis.sh
+        │               ├── docker-bench-security.sh
+        │               │         └── <image>-compliance-report.log
+        │               └── generate_docker_cis_csv.py
+        │                         ├── <image>-compliance-report.csv
+        │                         ├── <image>-compliance-summary.csv
+        │                         ├── <image>-compliance-report.json
+        │                         ├── <image>-compliance-report.html
+        │                         └── <image>-compliance-report.zip
+        │
+        ├── [Vulnerability Scanning]
+        │     └── engine_trivy_wrapper.sh
+        │               └── engine_trivy.sh
+        │                         ├── trivy image (JSON output)
+        │                         ├── generate_vulnerability_html.py
+        │                         ├── <image>-vulnerability-report.csv
+        │                         ├── <image>-vulnerability-summary.csv
+        │                         ├── <image>-vulnerability-report.html
+        │                         └── <image>-vulnerability-report.zip
+        │
+        └── [Reporting Layer]
+              └── reporter.sh
+                        ├── excel_reporter.py
+                        │         └── <assessment>-assessment.xlsx
+                        └── full_assessment_html.py
+                                  └── <assessment>.html
+```
+
+---
+
+## 3. Component Inventory
+
+| Component | Type | Responsibility |
+|---|---|---|
+| `engine_docker_cis.sh` | Bash | Orchestrates Docker Bench execution and compliance report generation |
+| `engine_trivy_wrapper.sh` | Bash | Launches the Trivy engine and preserves assessment directory context |
+| `engine_trivy.sh` | Bash | Image discovery, Trivy execution, vulnerability report generation |
+| `generate_docker_cis_csv.py` | Python | Parses Docker Bench log, merges with controls library, produces CSV/JSON |
+| `generate_docker_cis_html.py` | Python | Generates HTML compliance report from CSV output |
+| `generate_vulnerability_html.py` | Python | Generates HTML vulnerability report from Trivy CSV output |
+| `excel_reporter.py` | Python | Consolidates all CSV reports into a single Excel workbook |
+| `full_assessment_html.py` | Python | Generates a consolidated HTML assessment dashboard |
+| `reporter.sh` | Bash | Assessment directory management and report format selection |
+| `utils.sh` | Bash | Shared logging, debug output, and helper functions |
+| `config.sh` | Bash | Centralised configuration — paths, severity filters, scanner selection |
+
+---
+
+## 4. Configuration (`config.sh`)
+
+All engine behaviour is driven by `config.sh`. The following variables are required:
+
+| Variable | Description |
+|---|---|
+| `BASE_DIR` | Root directory for Adhiambo |
+| `IMAGES_DIR` | Directory containing TAR image archives |
+| `IMPORT_DIR` | Directory for importing external TAR archives |
+| `REPORTS_DIR` | Root directory for all assessment output |
+| `DOCKER_BENCH_DIR` | Path to Docker Bench for Security installation |
+| `SCANNERS` | Trivy scanner types to enable (e.g. `vuln,secret,misconfig`) |
+| `SEVERITIES` | Severity filter for Trivy (e.g. `CRITICAL,HIGH,MEDIUM,LOW`) |
+| `IGNORE_UNFIXED` | Whether to suppress unfixed vulnerabilities (`true` / `false`) |
+| `HTML_TEMPLATE` | Optional path to a Trivy HTML template for fallback HTML generation |
+
+If any required variable is missing or empty at startup, the engine exits with an explicit error identifying the missing variable.
+
+---
+
+## 5. Controls Library
+
+The controls library is a CSV file that maps CIS Docker Benchmark check identifiers to their metadata. It is the reference source for enriching Docker Bench findings with descriptions, audit steps, and remediation guidance. The path to this file is configured via `config.sh` and passed to `generate_docker_cis_csv.py` at runtime.
+
+> **Note:** The controls library file location is not yet confirmed in the project structure. This is tracked in Open Item 12.
+
+### 5.1 Fields
+
+| Field | Description |
+|---|---|
+| `REF` | Adhiambo control reference (e.g. `A1`, `B3`). Used as the primary key for merging with Docker Bench output. |
+| `Standard` | The CIS Benchmark control name or title. |
+| `Description/Rationale` | Plain-language explanation of what the control checks and why it matters. |
+| `Audit` | The audit command or procedure used to verify the control. |
+| `Remediation` | The specific action required to resolve a failing control. |
+
+### 5.2 Section Reference Mapping
+
+Docker Bench for Security outputs check IDs in the format `<section>.<check>` (e.g. `2.14`). The controls library uses a letter-prefixed reference scheme. The mapping is:
+
+| Docker Bench Section | Controls Library Prefix | CIS Topic |
+|---|---|---|
+| `1.x` | `A` | Host Configuration |
+| `2.x` | `B` | Docker Daemon Configuration |
+| `3.x` | `C` | Docker Daemon Configuration Files |
+| `4.x` | `D` | Container Images and Build Files |
+| `5.x` | `E` | Container Runtime |
+
+**Example:** Docker Bench check `2.14` maps to controls library reference `B14`.
+
+If a Docker Bench check ID has no corresponding entry in the controls library, the check is still included in the output with `Standard` set to `Control metadata not found` and empty `Description/Rationale`, `Audit`, and `Remediation` fields.
+
+---
+
+## 6. Docker CIS Engine (`engine_docker_cis.sh`)
+
+### 6.1 Invocation
+
+The engine is invoked through the main `hardenx` entrypoint. The following CLI flags are supported:
 
 ```bash
-bash engine/docker.sh [OPTIONS]
+./hardenx [OPTIONS]
 
 Options:
-  --level <1|2>           Scan level. Defaults to 1 if not specified.
-  --image <image:tag>     Target image for image-level checks and Docker Scout scanning.
-                          If omitted, all image-related checks are marked SKIPPED.
-  --sbom-format <format>  SBOM output format: cyclonedx | spdx.
-                          Defaults to cyclonedx if not specified.
-  --help                  Display the help menu and exit. The scan does not run.
+  -A    Full Security Assessment — runs Trivy and Docker CIS engine, produces consolidated reports
+  -V    Vulnerability Scan — runs Trivy only
+  -C    Docker CIS Compliance Scan — runs Docker Bench for Security only
+  -q    Quiet mode — suppresses console output
+  -v    Verbose mode — enables debug output, overrides quiet mode
+  -h    Help — displays usage information and exits
 ```
 
-**Default behaviour:** If invoked with no arguments, the script runs a Level 1 scan with no image and CycloneDX as the SBOM format. No confirmation is required.
+**Default behaviour:** If invoked with no arguments, `hardenx` runs in interactive mode and presents a scan mode selection menu.
 
 ```bash
-# Equivalent — both run a Level 1 scan with defaults
-bash engine/docker.sh
-bash engine/docker.sh --level 1
+# Interactive mode — presents scan mode menu
+./hardenx
+
+# Full Security Assessment, quiet output
+./hardenx -A -q
+
+# Vulnerability scan only
+./hardenx -V
+
+# Docker CIS compliance scan only
+./hardenx -C
+
+# Verbose output for debugging
+./hardenx -v
 ```
 
-**Help menu:** Invoking `--help` prints usage information and exits without running any checks.
+> **Note:** The `-A` Full Security Assessment mode still prompts the operator interactively for image selection. Fully non-interactive CI mode is tracked as Open Item 6.
+
+### 6.2 Assessment Directory
+
+The engine writes all output to a dedicated assessment directory under `REPORTS_DIR`. The directory name follows the convention:
+
+```
+<image_name>-security-assessment/
+```
+
+In a full assessment run (where both Trivy and Docker CIS engines run together), the existing assessment directory created by the Trivy engine is reused. In a standalone Docker CIS run, a new directory is created:
+
+```
+docker-cis-<YYYYMMDD-HHMMSS>/
+```
+
+### 6.3 Docker Bench for Security Execution
+
+Docker Bench for Security is invoked from its installation directory as defined in `DOCKER_BENCH_DIR`:
 
 ```bash
-bash engine/docker.sh --help
+cd "$DOCKER_BENCH_DIR"
+sudo bash docker-bench-security.sh
 ```
 
+The full output is written to the log report file. In verbose mode the output is also streamed to the console via `tee`.
+
+If `DOCKER_BENCH_DIR` is not defined in `config.sh` or the directory does not exist, the engine exits immediately with an error:
+
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — Docker CIS Benchmark Engine
- Benchmark: CIS Docker Benchmark v1.8.0
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-USAGE
-  bash engine/docker.sh [OPTIONS]
-
-OPTIONS
-  --level <1|2>
-      Scan level to run.
-      Level 1 — Essential, foundational CIS controls. (default)
-      Level 2 — Defence-in-depth controls. Includes all Level 1 checks.
-
-  --image <image:tag>
-      Target container image for image-level checks and Docker Scout
-      vulnerability scanning. If omitted, image checks are marked SKIPPED.
-      Only one image is supported per invocation.
-      Example: myrepo/myapp:latest
-      Example: 123456789.dkr.ecr.eu-west-1.amazonaws.com/myapp:v1.2
-
-  --sbom-format <cyclonedx|spdx>
-      Output format for the SBOM generated by Docker Scout.
-      Defaults to cyclonedx if not specified.
-      Requires --image and Docker Scout to be installed.
-
-  --help
-      Display this help menu and exit.
-
-DEFAULTS
-  If invoked with no arguments:
-    --level 1  --sbom-format cyclonedx  (no image)
-
-EXAMPLES
-  Run a Level 1 scan with no image:
-    bash engine/docker.sh
-
-  Run a Level 2 scan with an image:
-    bash engine/docker.sh --level 2 --image myrepo/myapp:latest
-
-  Run a Level 1 scan with an ECR image and SPDX SBOM:
-    bash engine/docker.sh --image 123456789.dkr.ecr.eu-west-1.amazonaws.com/myapp:v1.2 --sbom-format spdx
-
-NOTES
-  - sudo or root access is required for host and daemon-level checks.
-  - Docker Scout must be installed separately for image checks.
-    Install: https://docs.docker.com/scout/install/
-  - All registry sessions are logged out at the end of every scan.
-  - Report output: adhiambo_docker_<timestamp>.csv
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[!] DOCKER_BENCH_DIR is not defined in config.sh
+[!] Docker Bench for Security not found: <path>
 ```
 
-**Other examples:**
+### 6.4 Report Generation
+
+After Docker Bench completes, the engine calls `generate_docker_cis_csv.py` to produce the structured reports:
 
 ```bash
-# Level 2 scan with image, default SBOM format (CycloneDX)
-bash engine/docker.sh --level 2 --image myrepo/myapp:latest
-
-# Level 1 scan with image from ECR, SPDX SBOM
-bash engine/docker.sh --image 123456789.dkr.ecr.eu-west-1.amazonaws.com/myapp:v1.2 --sbom-format spdx
+python3 generate_docker_cis_csv.py \
+    <controls.csv> \
+    <docker-bench.log> \
+    <output.csv> \
+    <summary.csv>
 ```
+
+If the controls library is not found, the engine exits with an error:
+
+```
+[!] Control library not found: <path>
+```
+
+### 6.5 Compliance Artifact Replication
+
+In a full assessment run involving multiple images, Docker Bench for Security produces a single set of compliance findings that applies to the host — not to individual images. The engine replicates the compliance artifacts to every image assessment directory under `REPORTS_DIR` so that each per-image report is complete.
+
+Replication is skipped for the directory where the compliance scan was originally generated. Directories named `compliance/` are excluded from the target list.
 
 ---
 
-## 3. Registry Detection & Login Flow
+## 7. Trivy Engine (`engine_trivy.sh` + `engine_trivy_wrapper.sh`)
 
-### 3.1 Pre-Flight: Existing Session Check
+### 7.1 Wrapper (`engine_trivy_wrapper.sh`)
 
-Before prompting for new credentials, the script checks for any existing authenticated Docker sessions in `~/.docker/config.json`. For each detected session:
+The wrapper launches `engine_trivy.sh` as a subprocess and preserves the assessment directory context after the engine exits. Because `engine_trivy.sh` runs in a subprocess, exported variables do not survive into the parent shell. The wrapper recovers `CURRENT_ASSESSMENT_DIR` by finding the most recently modified assessment directory under `REPORTS_DIR` that is not a `docker-cis-*` directory.
 
-- The registry hostname is displayed.
-- The stored username is shown with only the **first three characters visible** and the remainder masked (e.g. `joh*****`).
-- The operator is prompted:
+### 7.2 Image Sources
+
+The Trivy engine discovers images from three sources:
+
+| Source | Method |
+|---|---|
+| Docker daemon | `docker image ls` — lists all locally pulled images |
+| TAR archives | `find $IMAGES_DIR -name "*.tar"` — loads archived images |
+| Registry | Interactive pull via `docker pull <image>` |
+
+The operator selects images interactively from a numbered menu. Multiple images can be selected for vulnerability scans. Full Security Assessment mode restricts selection to a single image.
+
+### 7.3 Dependency Check
+
+At startup, the engine checks for required dependencies: `trivy`, `jq`, and `zip`. If any are missing, the operator is prompted to install them:
 
 ```
-[INFO] Existing Docker session detected:
-       Registry : docker.io
-       User     : joh*****
-
-Proceed with this session? [y/N/use-different]:
+[!] Missing dependencies: trivy jq
+Install them now? [y/N]:
 ```
 
-- **y** — retain the session and proceed.
-- **N** — log out of this session; the operator will be prompted for new credentials.
-- **use-different** — retain the existing session but also prompt for an additional session for a different registry (applicable when an image requires a separate registry).
+- **y** — installs missing packages via `apt`.
+- **N** — the engine exits without running any checks.
 
-All sessions detected at startup — whether retained or replaced — are tracked. **All sessions are fully logged out at the end of the scan regardless of outcome** (see Section 8).
+### 7.4 Trivy Invocation
+
+```bash
+trivy image \
+    --quiet \
+    --scanners "$SCANNERS" \
+    --severity "$SEVERITIES" \
+    --format json \
+    --output <json_report> \
+    [--ignore-unfixed] \
+    <image>
+```
+
+For TAR-based images, `--input <file>` is used instead of the image name directly.
+
+### 7.5 Severity Override
+
+The operator can override the configured severity filter at invocation time:
+
+```bash
+bash engine_trivy.sh --severity CRITICAL,HIGH
+```
+
+If `--severity` is not provided, the value from `SEVERITIES` in `config.sh` is used.
+
+### 7.6 Scan Types
+
+The `SCANNERS` configuration variable controls which Trivy scan types are enabled. Supported values:
+
+| Scanner | What it detects |
+|---|---|
+| `vuln` | Known CVEs in OS packages and application dependencies |
+| `secret` | Hardcoded secrets, API keys, credentials |
+| `misconfig` | Dockerfile and container configuration issues |
+
+Multiple scanners can be enabled simultaneously (e.g. `vuln,secret,misconfig`).
+
+### 7.7 Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Scan completed. No CRITICAL findings. |
+| `1` | Scan failed or dependency installation declined. |
+| `10` | Scan completed. One or more CRITICAL findings detected. |
 
 ---
 
-### 3.2 Registry Type Detection
+## 8. Status Values
 
-If an image is provided, the script infers the registry type from the image name to determine the appropriate authentication method. Detection rules are evaluated in order:
+Docker Bench for Security produces four status values. These are carried through the pipeline without remapping and appear in all output formats:
 
-| Pattern | Inferred Registry | Auth Method |
+| Status | Meaning | Report Colour |
 |---|---|---|
-| No prefix, or `docker.io/` prefix | Docker Hub | `docker login` with username + password/token |
-| `*.dkr.ecr.*.amazonaws.com` | AWS ECR | `aws ecr get-login-password` piped to `docker login` |
-| `gcr.io/*` or `*.gcr.io/*` | Google Container Registry | `gcloud auth print-access-token` or service account key |
-| `ghcr.io/*` | GitHub Container Registry | `docker login ghcr.io` with GitHub PAT |
-| Any other hostname | Custom / Self-Hosted (e.g. Harbor, Nexus, GitLab Registry) | `docker login <hostname>` with username + password |
+| `PASS` | Configuration meets the CIS control | Green |
+| `WARN` | Configuration does not meet the CIS control | Red |
+| `INFO` | Informational — requires operator assessment | Blue |
+| `NOTE` | Advisory note — requires operator assessment | Grey |
+
+> **Note:** The Adhiambo-wide status model (PASS, FAIL, N/A, SKIPPED, MANUAL_REVIEW) has not been applied to the Docker engine in v1. The native Docker Bench status values are used throughout. Alignment with the Adhiambo status model is tracked as Open Item 7.
 
 ---
 
-### 3.3 Login Flow per Registry Type
+## 9. Output Formats
 
-#### Docker Hub
-```
-[INFO] Image registry detected: Docker Hub
-Enter Docker Hub username: ________
-Enter password or access token: [hidden input]
-```
+### 9.1 Per-Image Compliance Outputs
 
-#### AWS ECR
-```
-[INFO] Image registry detected: AWS ECR
-       Region   : eu-west-1
-       Account  : 123456789
-
-Enter AWS Access Key ID: ________
-Enter AWS Secret Access Key: [hidden input]
-Enter AWS Session Token (leave blank if not using STS): [hidden input]
-```
-The script then runs:
-```bash
-aws configure set aws_access_key_id ...
-aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <registry>
-```
-
-#### Google Container Registry
-```
-[INFO] Image registry detected: Google Container Registry
-Authenticate via:
-  [1] gcloud CLI (requires gcloud installed)
-  [2] Service account key (JSON)
-```
-
-#### GitHub Container Registry
-```
-[INFO] Image registry detected: GitHub Container Registry (ghcr.io)
-Enter GitHub username: ________
-Enter GitHub Personal Access Token (PAT): [hidden input]
-```
-
-#### Custom / Self-Hosted (Harbor, Nexus, etc.)
-```
-[INFO] Image registry detected: Custom/Self-Hosted
-       Host: registry.acme.internal
-
-Enter username: ________
-Enter password: [hidden input]
-```
-The script runs `docker login registry.acme.internal` with the provided credentials. No special handling is required — Harbor and most self-hosted registries implement the standard Docker Registry HTTP API v2.
-
----
-
-### 3.4 Multi-Registry Note
-
-Because Docker Hub credentials cannot authenticate to third-party registries (e.g. ECR, Harbor), each registry maintains a **separate, independent login session**. If the provided image is on a non-Docker Hub registry, the script handles only that registry's authentication. The two flows do not interfere with each other.
-
----
-
-## 4. Docker Scout & Image Scanning
-
-### 4.1 Docker Daemon Pre-Flight Check
-
-Before any other checks run, the script verifies that the Docker daemon is present and running:
-
-```bash
-docker info > /dev/null 2>&1
-```
-
-- **If the Docker daemon is running:** The scan proceeds normally.
-- **If the Docker daemon is not running but containerd is detected:** The script exits cleanly with an informative message. No checks are run and no report is generated.
-
-```
-[ERROR] Docker daemon is not running on this host.
-
-        Adhiambo detected that containerd is present, but this engine
-        requires the Docker daemon and the docker CLI to run CIS checks.
-
-        Containerd-only environments are outside the scope of this engine.
-        If you are running workloads on a Kubernetes node using containerd
-        directly, please use the Kubernetes engine instead.
-
-        No checks were run. No report has been generated.
-```
-
-- **If neither Docker nor containerd is detected:** The script exits with a different message.
-
-```
-[ERROR] Docker does not appear to be installed on this host.
-
-        No checks were run. No report has been generated.
-```
-
-### 4.2 Docker Scout Availability Check
-
-At startup (before any checks run), the script checks whether Docker Scout is installed:
-
-```bash
-docker scout version > /dev/null 2>&1
-```
-
-- **If available:** Image scanning, vulnerability assessment, and SBOM generation proceed normally.
-- **If not available:** A warning is printed, and all image-related checks are marked `SKIPPED` with the reason `Docker Scout not installed`.
-
-```
-[WARN] Docker Scout is not installed. Image-level checks will be marked SKIPPED.
-       To enable image checks, install Docker Scout: https://docs.docker.com/scout/install/
-```
-
-### 4.3 Image Parameter Check
-
-If Docker Scout is available but `--image` was not provided:
-
-- All image-level checks are marked `SKIPPED` with the reason `No image provided`.
-
-### 4.4 Vulnerability Scanning
-
-With Docker Scout available and an image provided:
-
-```bash
-docker scout cves <image> --format sarif --output /tmp/adhiambo_scout_cves.json
-```
-
-Findings from the CVE scan are summarised in the report. The path to the raw Scout output is included in the report notes.
-
-### 4.5 SBOM Generation
-
-```bash
-# CycloneDX (default)
-docker scout sbom <image> --format cyclonedx --output /tmp/adhiambo_sbom.cdx.json
-
-# SPDX
-docker scout sbom <image> --format spdx --output /tmp/adhiambo_sbom.spdx.json
-```
-
-The SBOM file path is captured in the report as a note on the relevant check row:
-
-```
-SBOM available at: /tmp/adhiambo_sbom.cdx.json
-```
-
----
-
-## 5. CIS Benchmark v1.8.0 Check Structure
-
-Checks are organised into sections following the CIS Docker Benchmark v1.8.0 structure. Each check is tagged with its scan level (L1 or L2).
-
-### 5.1 Sections
-
-| Section | Title |
+| File | Description |
 |---|---|
-| 1 | Host Configuration |
-| 2 | Docker Daemon Configuration |
-| 3 | Docker Daemon Configuration Files |
-| 4 | Container Images and Build Files |
-| 5 | Container Runtime |
-| 6 | Docker Security Operations |
-| 7 | Docker Swarm Configuration |
+| `<image>-compliance-report.log` | Raw Docker Bench for Security output |
+| `<image>-compliance-report.csv` | Enriched findings merged with controls library |
+| `<image>-compliance-summary.csv` | Aggregated counts per status value |
+| `<image>-compliance-report.json` | Structured JSON report for programmatic consumption |
+| `<image>-compliance-report.html` | Human-readable HTML compliance report |
+| `<image>-compliance-report.zip` | Packaged archive of all compliance artifacts |
 
-### 5.2 Check Classification
+### 9.2 Per-Image Vulnerability Outputs
 
-Each check has one of the following types:
-
-| Type | Meaning |
+| File | Description |
 |---|---|
-| `AUTOMATED` | The script can fully evaluate the check and determine PASS or FAIL using Docker CLI and daemon commands alone. OS-independent. |
-| `MANUAL` | The check cannot be fully automated. The script collects and displays the relevant command output and marks the status as `MANUAL_REVIEW`. |
-| `IMAGE` | Requires Docker Scout and a target image. Marked `SKIPPED` if either is absent. |
-| `OS_DEPENDENT` | The check relies on OS-level findings (file permissions, audit rules, kernel parameters, service configuration). The Docker engine does not run these checks itself — it reads the finding from the OS engine report. See Section 5.4. |
+| `<image>-vulnerability-report.json` | Raw Trivy JSON output |
+| `<image>-vulnerability-report.csv` | Detailed findings (CVEs, secrets, misconfigurations) |
+| `<image>-vulnerability-summary.csv` | Aggregated counts by severity and finding type |
+| `<image>-vulnerability-report.html` | Human-readable HTML vulnerability report |
+| `<image>-vulnerability-report.zip` | Packaged archive of all vulnerability artifacts |
 
-### 5.3 Status Values
+### 9.3 Consolidated Outputs (Full Assessment)
 
-The Docker Engine extends the standard three-status model from the README with two additional statuses for this component:
-
-| Status | Description |
+| File | Description |
 |---|---|
-| `PASS` | Check evaluated and the configuration meets the CIS control. |
-| `FAIL` | Check evaluated and the configuration does not meet the CIS control. |
-| `N/A` | Check is not applicable to this environment. |
-| `SKIPPED` | Check was not run. Reason is recorded in the Remediation field. |
-| `MANUAL_REVIEW` | Check cannot be fully automated. Relevant output is captured for operator review. |
+| `<assessment>-assessment.xlsx` | Excel workbook consolidating all CSV reports into one file, one sheet per CSV |
+| `<assessment>.html` | HTML dashboard summarising vulnerability and compliance findings with links to all artifacts |
 
----
-
-## 5.4 OS Engine Dependency
-
-### Architecture
-
-The Docker CIS Benchmark includes checks that operate at the host OS level — auditd rules for Docker-related files and directories, file and directory permission checks, kernel parameters, and systemd service configuration. These checks differ between Ubuntu and Rocky Linux and are fully owned by their respective OS engines (`engine/ubuntu.sh` and `engine/rocky.sh`).
-
-Rather than duplicating this logic inside the Docker engine, Adhiambo takes the following approach: when a full scan is run, both the OS engine and the Docker engine execute. The Docker engine reads the OS engine's output report for any `OS_DEPENDENT` checks and references the finding directly, rather than re-running the same check itself. Each OS-dependent check row in the Docker report cites the source OS engine check ID so findings are fully traceable.
-
-This means:
-
-- No duplication of OS-level check logic across engines.
-- Each engine remains focused on its own domain.
-- The Docker report is complete — OS-dependent findings are represented, not omitted.
-
-### OS Engine Report Lookup
-
-For each `OS_DEPENDENT` check, the Docker engine looks for the OS engine report in the same output directory as the current scan. The lookup order is:
-
-```
-Is the Ubuntu or Rocky engine report present in the output directory?
-        │
-        ├── Yes -> Read the relevant finding and reference it in the Docker report
-        │
-        └── No  -> Is the OS engine marked as under maintenance?
-                      ├── Yes -> SKIPPED: OS engine under maintenance
-                      └── No  -> SKIPPED: OS engine report not found —
-                                 run the Ubuntu or Rocky engine first
-```
-
-### Current Maintenance State
-
-> **Note for implementers:** At the time this document was written, both the Ubuntu and Rocky Linux engines are undergoing a significant rewrite and are not available. All `OS_DEPENDENT` checks should currently be marked:
->
-> `SKIPPED: OS engine under maintenance`
->
-> This is a **temporary placeholder**. Once the OS engine rewrites are complete and stable reports are available, the skip logic must be replaced with live report lookups as described above. This item is tracked in the open items (see Section 12, item 5).
-
----
-
-### Level 1 (Default)
-Essential, foundational security configurations with minimal operational impact. Automatically selected if `--level` is not specified.
-
-### Level 2 (Opt-in)
-Defence-in-depth controls for environments requiring a more stringent posture. **Includes all Level 1 checks plus Level 2 additions.** Level 2 is a superset of Level 1 — running `--level 2` runs everything.
-
----
-
-## 7. Reporting Helper (`reporter_docker.sh`)
-
-### 7.1 Purpose
-
-`reporter_docker.sh` is a temporary component that produces the CSV report from Docker Engine findings. It will be retired and replaced by the main `reporter.sh` when that component is ready. It is designed to be interface-compatible with the intended Reporter so that the handover requires minimal changes.
-
-### 7.2 Output
-
-The helper produces a single CSV file. The output path is:
-
-```
-adhiambo_docker_<timestamp>.csv
-```
-
-### 7.3 CSV Fields
-
-The CSV follows the four-column schema defined in the Adhiambo README:
+### 9.4 CSV Schema — Compliance Report
 
 | Column | Description |
 |---|---|
-| `Check Name` | Short CIS control identifier (e.g. `2.1`, `5.4`). |
-| `Description` | Plain-language explanation of what the check tests and why it matters. |
-| `Status` | `PASS`, `FAIL`, `N/A`, `SKIPPED`, or `MANUAL_REVIEW`. |
-| `Remediation` | The specific action required to resolve a failing check. For `SKIPPED`, contains the skip reason. For `MANUAL_REVIEW`, contains the captured command output. Blank for `PASS` and `N/A`. |
+| `REF` | Adhiambo control reference (e.g. `A1`, `B3`) |
+| `Standard` | CIS Benchmark control name |
+| `Description/Rationale` | Plain-language explanation of the control |
+| `Audit` | Audit procedure for the control |
+| `Remediation` | Remediation guidance for failing controls |
+| `Status` | `PASS`, `WARN`, `INFO`, or `NOTE` |
 
-### 7.4 SBOM Reference in Report
+### 9.5 CSV Schema — Vulnerability Report
 
-When an SBOM is generated, the relevant image check row includes a note in the Remediation field:
-
-```
-SBOM available at: /tmp/adhiambo_sbom.cdx.json
-```
-
----
-
-## 8. Console Output
-
-### 8.1 Purpose
-
-As checks execute, the script streams live output to the console so the operator can follow progress in real time, identify where the scan is stalling, and debug issues without waiting for the final report.
-
-### 8.2 Section Headers
-
-Before each group of checks, a section header is printed to visually separate the CIS sections:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- SECTION 2 — Docker Daemon Configuration
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-### 8.3 Per-Check Output
-
-Each check prints a single line as it completes. The format is:
-
-```
-[<STATUS>]  <Check ID>  <Check Name>
-```
-
-For `SKIPPED`, the reason is included inline:
-
-```
-[SKIPPED: <reason>]  <Check ID>  <Check Name>
-```
-
-**Example output for a section:**
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- SECTION 2 — Docker Daemon Configuration
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[PASS]           2.1   Ensure network traffic is restricted between containers
-[FAIL]           2.2   Ensure logging level is set to info
-[PASS]           2.3   Ensure Docker is allowed to make changes to iptables
-[MANUAL_REVIEW]  2.6   Ensure TLS authentication for Docker daemon is configured
-[PASS]           2.7   Ensure the default ulimit is configured appropriately
-[SKIPPED: No image provided]  2.11  Ensure that authorization for Docker client commands is enabled
-```
-
-### 8.4 Manual Review Block
-
-Checks marked `MANUAL_REVIEW` cannot be fully automated. Their captured command output is not printed inline — instead, it is collected and printed as a block at the end of the section in which the check appears. This keeps the per-check output readable while ensuring the operator still sees the raw output before moving to the next section.
-
-**Format:**
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- MANUAL REVIEW REQUIRED — SECTION 2
- The following checks require operator review.
- Output has also been captured in the CSV report.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
---- 2.6  Ensure TLS authentication for Docker daemon is configured ---
-Action  : Verify the Docker daemon is configured with --tlsverify and
-          that valid certificates exist at the expected paths.
-Command : ps aux | grep dockerd
-Output  :
-  root  1234  0.0  0.1  dockerd --host=fd:// --containerd=/run/...
----------------------------------------------------------------------
-```
-
-If a section has no `MANUAL_REVIEW` checks, the manual block is omitted entirely for that section.
-
-The same captured output is written to the `Remediation` column of the CSV report.
-
-### 8.5 Scan Summary Block
-
-After all sections have run and before the teardown, a summary block is printed. This block shows the total count of each status across the entire scan.
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- SCAN SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  PASS             18
-  FAIL              5
-  MANUAL_REVIEW     3
-  SKIPPED           4
-  N/A               2
-  ──────────────────
-  TOTAL            32
-
-  Report saved to: adhiambo_docker_2026-04-10T1143.csv
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-The summary block appears **only in the console**. It is not written to the CSV report.
+| Column | Description |
+|---|---|
+| `Finding Type` | `Vulnerability`, `Secret`, or `Misconfiguration` |
+| `Target` | The scanned file, package, or layer |
+| `Component Type` | OS package type or language ecosystem |
+| `Severity` | `CRITICAL`, `HIGH`, `MEDIUM`, or `LOW` |
+| `Finding ID` | CVE ID, secret rule ID, or misconfiguration ID |
+| `Package` | Affected package name |
+| `Installed Version` | Version currently present |
+| `Fixed Version` | Version in which the issue is resolved (if available) |
+| `Title` | Short description of the finding |
+| `Reference URL` | Link to the advisory or reference |
+| `Description` | Full description (truncated to 1000 characters) |
 
 ---
 
-## 9. Session Teardown (Logout)
+## 10. Reporting Layer
 
-At the end of every scan run — regardless of whether the scan completed successfully, encountered errors, or was interrupted — the script logs out of **all** Docker registry sessions on the host:
+> **Architectural Note — Tight Coupling**
+>
+> The reporting layer documented in this section is currently tightly coupled to the Docker engine. The Python scripts, file naming conventions, assessment directory structure, and CSV schemas are all Docker-specific and live inside the engine itself.
+>
+> The intended direction is to decouple this reporting layer into a standalone `reporter.sh` component that can be reused across all five Adhiambo engines. When the reporter component is prioritised, a decision will be made on whether to adopt the current implementation as the foundation or rebuild it to a new specification. Until that decision is made, the current implementation should be treated as the reference — no changes should be made to the output schemas or file naming conventions without cross-engine agreement.
+>
+> This item is tracked in Open Item 11.
 
-```bash
-docker logout
+### 10.1 `reporter.sh`
+
+Handles assessment directory lifecycle and report format selection.
+
+**Assessment directory initialisation:** Creates a dedicated directory per image scan under `REPORTS_DIR` and clears any existing content. Exposes `CURRENT_ASSESSMENT_DIR` and `CURRENT_ASSESSMENT_NAME` to all downstream components.
+
+**Report format selection:** Prompts the operator to select one of three output modes:
+
+| Option | Format | Description |
+|---|---|---|
+| 1 | `csv` | Separate CSV files only |
+| 2 | `excel` | Combined Excel workbook only |
+| 3 | `both` | CSV files and Excel workbook (default) |
+
+The selected format is stored in `REPORT_FORMAT` and respected by all downstream reporting components. The format is only selected once per run — subsequent engine invocations in a full assessment reuse the previously selected value.
+
+### 10.2 `excel_reporter.py`
+
+Reads all CSV files in an assessment directory and produces a single Excel workbook with one worksheet per CSV file. Column widths are auto-sized based on content (capped at 80 characters). The output file is named:
+
+```
+<assessment_dir>/<assessment_name>-assessment.xlsx
 ```
 
-For registries that were explicitly logged into during the session (tracked in a runtime array), a targeted logout is also performed per registry:
+### 10.3 `full_assessment_html.py`
 
-```bash
-docker logout <registry_hostname>
-```
+Generates a consolidated HTML dashboard for a full assessment. The dashboard includes:
 
-This ensures the host is returned to a clean, unauthenticated state after every Adhiambo run. The operator must log in again for any subsequent operations requiring registry access.
+- Vulnerability summary table (sourced from `<image>-vulnerability-summary.csv`)
+- Compliance summary table (sourced from `<image>-compliance-summary.csv`)
+- Artifact index with links to all generated files
 
-A teardown summary is printed at the end of the run:
+### 10.4 `generate_docker_cis_html.py`
 
-```
-[TEARDOWN] Logging out of all registry sessions...
-           ✓ Logged out: docker.io
-           ✓ Logged out: 123456789.dkr.ecr.eu-west-1.amazonaws.com
-[TEARDOWN] All sessions cleared.
-```
+Generates an HTML compliance report from the enriched compliance CSV and summary CSV. Each finding row is colour-coded by status value. The report includes a summary table and a detailed findings table.
+
+### 10.5 `utils.sh`
+
+Provides shared helper functions used across all engine and reporting components:
+
+| Function | Description |
+|---|---|
+| `log()` | Timestamped output. Suppressed in quiet mode unless verbose is enabled. |
+| `debug()` | Debug output. Only printed when `VERBOSE=true`. |
+| `section()` | Prints a formatted section header. |
+| `require_command()` | Checks whether a command exists. |
+| `ensure_dir()` | Creates a directory if it does not exist. |
 
 ---
 
-## 10. Component Flow
+## 11. Output Modes
+
+The engine supports two runtime output modes controlled by CLI flags:
+
+| Flag | Mode | Behaviour |
+|---|---|---|
+| *(none)* | Normal | All log output and banners printed to console |
+| `-q` | Quiet | Suppresses all console output; logs still written to file |
+| `-v` | Verbose | Enables debug output; overrides quiet mode |
+
+Quiet and verbose modes are set at `hardenx` invocation and propagated to all engines via the `QUIET` and `VERBOSE` environment variables.
+
+---
+
+## 12. Component Flow
 
 ```
-adhiambo.sh --tech docker --level <1|2> [--image <image>] [--sbom-format <format>]
-        │
-        ▼
-engine/docker.sh
+./hardenx [-A | -V | -C] [-q | -v]
         │
         ├── [Pre-flight]
-        │     ├── Check Docker daemon is running
-        │     │     ├── Containerd detected but no Docker daemon -> exit with message
-        │     │     └── Neither detected -> exit with message
-        │     ├── Check for OS engine report in output directory
-        │     │     ├── Found -> load report for OS_DEPENDENT check lookups
-        │     │     ├── Not found, engine under maintenance -> OS_DEPENDENT checks = SKIPPED: OS engine under maintenance
-        │     │     └── Not found, engine available -> OS_DEPENDENT checks = SKIPPED: OS engine report not found
-        │     ├── Check Docker Scout availability
-        │     ├── Detect existing registry sessions -> prompt operator
-        │     └── If --image provided: detect registry type -> run login flow
+        │     ├── Validate config.sh variables
+        │     └── Ensure required directories exist
         │
-        ├── [Each Section (1-7)]
-        │     ├── Print section header to console
-        │     ├── AUTOMATED checks -> PASS / FAIL -> print check line to console
-        │     ├── OS_DEPENDENT checks -> reference OS report or SKIPPED -> print check line to console
-        │     ├── MANUAL checks -> MANUAL_REVIEW -> print check line to console
-        │     ├── IMAGE checks -> PASS / FAIL / SKIPPED -> print check line to console
-        │     └── Print manual review block to console (if any MANUAL_REVIEW in section)
+        ├── [Report Format Selection]
+        │     └── reporter.sh → select_report_format()
         │
-        ├── [Scan Summary]
-        │     └── Print summary block to console (totals only, not written to CSV)
+        ├── [-V or -A: Vulnerability Scan]
+        │     ├── engine_trivy_wrapper.sh
+        │     │     └── engine_trivy.sh
+        │     │           ├── install_missing_dependencies() — trivy, jq, zip
+        │     │           ├── load_images() — Docker daemon + TAR files
+        │     │           ├── select_images() — interactive selection
+        │     │           └── run_scan() per selected image
+        │     │                 ├── init_assessment_dir()
+        │     │                 ├── trivy image --format json
+        │     │                 ├── generate_csv()
+        │     │                 ├── generate_summary()
+        │     │                 └── generate_vulnerability_html.py
+        │     └── Preserve CURRENT_ASSESSMENT_DIR (wrapper)
         │
-        ├── [Reporter]
-        │     └── reporter_docker.sh -> adhiambo_docker_<timestamp>.csv
+        ├── [-C or -A: Docker CIS Compliance Scan]
+        │     └── engine_docker_cis.sh
+        │           ├── Validate DOCKER_BENCH_DIR
+        │           ├── Reuse or create assessment directory
+        │           ├── Rebuild ALL_ASSESSMENT_DIRS from REPORTS_DIR
+        │           ├── sudo bash docker-bench-security.sh → .log
+        │           ├── generate_docker_cis_csv.py → .csv, .json, summary.csv
+        │           ├── generate_docker_cis_html.py → .html
+        │           ├── package_reports() → .zip
+        │           └── Replicate artifacts to all assessment directories
         │
-        └── [Teardown]
-              └── docker logout (all sessions)
+        └── [-A: Consolidated Reporting — if REPORT_FORMAT = excel or both]
+              └── reporter.sh → generate_excel_report()
+                    ├── excel_reporter.py → <assessment>.xlsx
+                    └── full_assessment_html.py → <assessment>.html
 ```
 
 ---
 
-## 11. Assumptions & Constraints
+## 13. Design Pattern Mapping
 
-- The script runs on the target Linux host with `bash` available (no external runtime required).
-- `sudo` or root access is required for daemon-level and host-level checks.
-- AWS CLI must be installed on the host for ECR authentication.
-- `gcloud` CLI must be installed on the host for GCR authentication.
-- Docker Scout must be installed separately; it is not bundled with Docker Engine by default on all distributions.
-- Only one image is supported per invocation in v1.
-- The script does not store or persist any credentials. All credentials are used in-memory at invocation time.
-- `OS_DEPENDENT` checks require the Ubuntu or Rocky Linux engine to have been run first and its report to be present in the output directory. Until the OS engine rewrites are complete, these checks are marked `SKIPPED: OS engine under maintenance`.
+| Component | Pattern | Rationale |
+|---|---|---|
+| `adhiambo.sh` | Facade / Controller | Single entry point coordinating all engines |
+| `engine_docker_cis.sh` | Strategy | Interchangeable compliance check execution |
+| `engine_trivy.sh` | Strategy | Interchangeable vulnerability scan execution |
+| `reporter.sh` | Factory | Produces structured output in selected format |
+| `excel_reporter.py` | Builder | Assembles multi-sheet workbook from CSV inputs |
+| `generate_docker_cis_csv.py` | Adapter | Translates Docker Bench log output into structured CSV/JSON |
+| `config.sh` | Configuration Object | Centralised runtime settings |
+| `utils.sh` | Utility / Helper | Shared cross-cutting concerns |
 
 ---
 
-## 12. Open Items
+## 14. Extensibility Model
+
+The engine is designed so that its two core tools — Docker Bench for Security and Trivy — can be replaced or supplemented without redesigning the broader architecture. The Python reporting layer is the only component that would need to change if the underlying tool output format changes.
+
+Specifically:
+- If Docker Bench for Security is updated to support a newer CIS benchmark version, only the controls library and the section reference mapping in `generate_docker_cis_csv.py` need updating.
+- If Trivy is replaced by a different scanner, only the invocation commands in `engine_trivy.sh` and the CSV generation logic need updating.
+- Additional scan types (SBOM generation, licence compliance) can be added as new output steps in `engine_trivy.sh` without modifying existing scan logic.
+- New report formats can be added as new Python modules without modifying the Bash engines.
+
+---
+
+## 15. CI/CD Integration
+
+While Adhiambo v1 is a manually invoked tool, the engine is designed to be automation-ready. Exit code `10` from `engine_trivy.sh` signals CRITICAL findings to a pipeline without requiring log parsing:
+
+```yaml
+# Example GitHub Actions step
+- name: Run Adhiambo Security Assessment
+  run: ./hardenx -A -q
+
+- name: Archive Reports
+  uses: actions/upload-artifact@v3
+  with:
+    name: security-reports
+    path: reports/
+```
+
+Full non-interactive CI mode with flag-based image selection is a candidate for a future iteration (see Open Item 6).
+
+---
+
+## 16. Assumptions & Constraints
+
+- All engines run on the target Linux host with `bash` available.
+- `sudo` access is required for Docker Bench for Security execution.
+- Python 3 must be available on the host for all reporting components.
+- `openpyxl` Python package must be installed for Excel report generation.
+- `jq` and `zip` must be available for Trivy report packaging.
+- `rsync` must be available for optional TAR archive imports.
+- Docker Bench for Security must be cloned into `tools/docker-bench-security/` before running compliance scans.
+- The controls library CSV file must be present at the path configured in `config.sh`. If absent, compliance report generation will fail.
+- Trivy is installed interactively if not found. If installation is declined, vulnerability scanning does not run.
+- Full Security Assessment mode (`-A`) still prompts the operator for image selection. It is not fully non-interactive.
+- Vulnerability-only scans (`-V`) support multiple images. Full Security Assessment (`-A`) supports one image per run.
+- Registry authentication is not handled by the tool. Images must be pulled manually via `docker pull` before scanning.
+
+---
+
+## 17. Open Items
 
 | # | Item | Owner | Status |
 |---|---|---|---|
-| 1 | Confirm the full list of L1 vs L2 check assignments from CIS Docker Benchmark v1.8.0 | Security team | Open |
-| 2 | Confirm whether AWS Session Token support is required for ECR (STS-based roles) | Engineering | Open |
-| 3 | Confirm target environment for GCR: gcloud CLI expected to be present, or service account key preferred? | Engineering | Open |
-| 4 | Define the handover interface contract between `reporter_docker.sh` and the future `reporter.sh` | Security team | Open |
-| 5 | **Replace OS engine maintenance placeholders with live report lookups once Ubuntu and Rocky Linux engine rewrites are complete.** All `OS_DEPENDENT` checks currently marked `SKIPPED: OS engine under maintenance` must be revisited at that point. | Engineering | Pending OS engine rewrite |
+| 1 | **SBOM generation** — Trivy supports CycloneDX and SPDX SBOM output. This is not yet implemented. Add `trivy image --format cyclonedx` as an output step in `engine_trivy.sh` and reference the SBOM path in the compliance report. | Engineering | Open |
+| 2 | **Registry login/logout flow** — no authentication flow exists for private registries (ECR, GCR, GHCR, Harbor). Currently only images already pulled locally or via manual `docker pull` are supported. Implement registry detection and per-registry login/logout as defined in earlier design iterations. | Engineering | Open |
+| 3 | **CIS level filtering** — Docker Bench for Security runs all checks by default. Level 1 vs Level 2 check distinction is not implemented. Implement level filtering during result parsing in `generate_docker_cis_csv.py` and expose via a `-l <1|2>` flag on `hardenx`. | Engineering | Open |
+| 4 | **`-h` help flag** — the `-h` flag is listed in the CLI options but the full help menu content is not yet defined. Define the help output for `hardenx -h` covering all flags, defaults, and examples. | Engineering | Open |
+| 5 | **Docker daemon pre-flight check** — no check for containerd-only environments. Add daemon detection before Docker Bench execution with an informative exit message. | Engineering | Open |
+| 6 | **Non-interactive / CI mode** — `-A` Full Security Assessment still prompts for image selection. A fully non-interactive mode with flag-based image specification is needed for CI/CD pipeline use. `--all` / `-a` flag for scanning all images is partially implemented. | Engineering | Open |
+| 7 | **Status model alignment** — the Docker engine uses native Docker Bench status values (PASS, WARN, INFO, NOTE). The Adhiambo-wide model uses PASS, FAIL, N/A, SKIPPED, MANUAL_REVIEW. Alignment should be implemented in `generate_docker_cis_csv.py` once the broader Adhiambo status model is ratified across all engines. | Security team | Open |
+| 8 | **OS engine dependency** — OS-dependent CIS checks (auditd rules, file permissions, kernel parameters) are not separated from Docker-specific checks. Once the Ubuntu and Rocky Linux engines are complete, `OS_DEPENDENT` checks should be marked `SKIPPED: OS engine report not found` until the OS engine report is present. | Engineering | Pending OS engine rewrite |
+| 9 | **Monitor Docker Bench for Security for CIS Docker Benchmark v1.8.0 support.** Upgrade benchmark version and revalidate controls library and section mapping once available. | Engineering | Open |
+| 10 | **`--output-dir` flag** — output directory is currently hardcoded via `REPORTS_DIR` in `config.sh`. Add an output directory flag to allow the operator to specify it at invocation time. | Engineering | Open |
+| 11 | **Reporter decoupling** — the reporting layer is currently tightly coupled to the Docker engine. The intended direction is a standalone reporter component reusable across all five engines. When this is prioritised, a decision must be made on whether to adopt the current Docker reporting implementation as the foundation or rebuild to a new specification. No changes should be made to the current output schemas or file naming conventions until that decision is made. | Engineering | Open |
+| 12 | **Controls library location** — the controls library CSV file is referenced in `engine_docker_cis.sh` but there is no confirmed project directory for it. Confirm the file location, add it to the project structure, and update `config.sh` with the correct path. | Engineering | Open |
 
 ---
 
-*This document is a living design spec. Updates should be made in the issues tab and reflected here before implementation begins.*
+*This document is a living design spec. Open items should be raised as tracked issues before implementation begins.*
