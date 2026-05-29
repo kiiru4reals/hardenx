@@ -1,20 +1,21 @@
-# HardenX v2.0.0-alpha
+# Adhiambo — Docker CIS Assessment Engine
+### `cis_checks.sh` — Scan. Harden. Comply.
+**Version:** 2.0.0-alpha
+**Status:** Implemented — Docker Engine
 
-> **Scan. Harden. Comply.**
-
-HardenX is an enterprise-grade container security assessment platform that automates vulnerability scanning, Docker CIS Benchmark compliance, and executive reporting for container images.
+Adhiambo is an enterprise-grade container security assessment platform that automates vulnerability scanning, Docker CIS Benchmark compliance, and executive reporting for container images.
 
 It integrates:
 
 - **Trivy** for vulnerability, secret, and misconfiguration scanning
-- **Docker Bench for Security** for Docker CIS Benchmark compliance
+- **Docker Bench for Security** for CIS Docker Benchmark v1.6.0 compliance
 - **Python-based reporting** for HTML dashboards and Excel workbooks
 
-HardenX supports:
+Adhiambo supports:
 
 - Local Docker images
 - Docker image TAR archives
-- Registry-based image scanning
+- Registry-based image scanning (manual pull required — see [Supported Registries](#supported-registries))
 - Optional import of TAR archives from external directories
 - Multi-image assessments
 - Full security assessments with consolidated reporting
@@ -41,14 +42,14 @@ HardenX supports:
 - [CI/CD Integration](#cicd-integration)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
-- [Contributing](#contributing)
+
 ---
 
 # Features
 
 ## Vulnerability Scanning
 
-HardenX uses Trivy to perform:
+Adhiambo uses Trivy to perform:
 
 - OS package vulnerability scanning
 - Application dependency scanning
@@ -59,9 +60,9 @@ HardenX uses Trivy to perform:
 
 ## Docker CIS Benchmark Compliance
 
-HardenX integrates Docker Bench for Security to perform:
+Adhiambo integrates Docker Bench for Security to perform:
 
-- Docker CIS Benchmark checks
+- CIS Docker Benchmark v1.6.0 checks
 - Compliance scoring
 - Executive summaries
 - HTML and Excel reporting
@@ -77,12 +78,12 @@ HardenX integrates Docker Bench for Security to perform:
 
 - Local Docker images
 - TAR archives stored in `images/`
-- Images pulled from container registries
+- Images pulled from container registries via `docker pull`
 - Optional import from user-specified directories
 
 ## Enterprise Reporting
 
-For every scanned image, HardenX can generate:
+For every scanned image, Adhiambo can generate:
 
 - JSON reports
 - CSV reports
@@ -104,10 +105,10 @@ For every scanned image, HardenX can generate:
 # Quick Start
 
 ```bash
-git clone https://github.com/your-org/hardenx.git
-cd hardenx
-chmod +x hardenx modules/*.sh modules/*.py
-./hardenx
+git clone https://github.com/your-org/adhiambo.git
+cd adhiambo
+chmod +x cis_checks.sh modules/*.sh modules/*.py
+./cis_checks.sh
 ```
 
 ---
@@ -131,13 +132,14 @@ sudo apt install -y \
 ## Python Dependencies
 
 ```bash
-pip3 install openpyxl pandas
+pip3 install openpyxl
 ```
 
 ## Docker Bench for Security
 
 ```bash
-git clone https://github.com/docker/docker-bench-security.git tools/docker-bench-security
+git clone https://github.com/docker/docker-bench-security.git \
+    $HOME/tools/docker-bench-security
 ```
 
 ---
@@ -147,42 +149,42 @@ git clone https://github.com/docker/docker-bench-security.git tools/docker-bench
 ## Interactive Mode
 
 ```bash
-./hardenx
+./cis_checks.sh
 ```
 
 ## Quiet Mode
 
 ```bash
-./hardenx -q
+./cis_checks.sh -q
 ```
 
 ## Verbose Mode
 
 ```bash
-./hardenx -v
+./cis_checks.sh -v
 ```
 
 ## Automated Full Security Assessment
 
 ```bash
-./hardenx -A
+./cis_checks.sh -A
 ```
 
 ---
 
 # Scan Modes
 
-## 1. Vulnerability Scan
+## 1. Vulnerability Scan (`-V`)
 
-Runs Trivy only.
+Runs Trivy only. Produces vulnerability reports for selected images.
 
-## 2. Docker CIS Compliance Scan
+## 2. Docker CIS Compliance Scan (`-C`)
 
-Runs Docker Bench for Security only.
+Runs Docker Bench for Security only. Produces CIS compliance reports for the Docker host.
 
-## 3. Full Security Assessment (Recommended)
+## 3. Full Security Assessment (`-A`) — Recommended
 
-Runs both Trivy and Docker CIS and produces consolidated reports.
+Runs both Trivy and Docker Bench for Security and produces consolidated reports. If Trivy fails or is declined, the compliance scan still runs.
 
 ---
 
@@ -198,21 +200,16 @@ Discovers all `.tar` files in the `images/` directory.
 
 ## Registry-Based Scanning
 
-Pulls images directly from registries and scans them immediately.
+Pull images manually before scanning:
 
-Examples:
-
-```text
-nginx:latest
-ubuntu:24.04
-python:3.12-slim
-ghcr.io/org/app:v1
-myregistry.company.com/backend:prod
+```bash
+docker pull nginx:latest
+./cis_checks.sh -V
 ```
 
 ## Optional External Import
 
-At runtime, HardenX can import TAR archives from any directory:
+At runtime, Adhiambo can import TAR archives from any directory:
 
 ```text
 Would you like to import image archives from another directory? [y/N]:
@@ -240,6 +237,8 @@ Examples:
 3,4,5      # Scan multiple images
 ```
 
+> **Note:** Full Security Assessment (`-A`) supports one image per run. Use Vulnerability Scan (`-V`) for multiple images.
+
 ---
 
 # Report Formats
@@ -252,7 +251,7 @@ Generates CSV, JSON, HTML, and ZIP reports.
 
 Generates a consolidated `.xlsx` workbook.
 
-## 3. Both
+## 3. Both (Default)
 
 Generates all supported outputs.
 
@@ -261,17 +260,17 @@ Generates all supported outputs.
 # Project Structure
 
 ```text
-hardenx/
-├── hardenx
-├── config.sh
+adhiambo/
+├── cis_checks.sh               # Docker engine entry point
+├── config.sh                   # Centralised configuration
 ├── README.md
 ├── ARCHITECTURE.md
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
 ├── LICENSE
 ├── .gitignore
-├── images/
-├── reports/
+├── images/                     # Docker image TAR archives
+├── reports/                    # Per-image assessment directories
 ├── modules/
 │   ├── engine_trivy.sh
 │   ├── engine_trivy_wrapper.sh
@@ -282,9 +281,13 @@ hardenx/
 │   ├── excel_reporter.py
 │   ├── generate_vulnerability_html.py
 │   ├── full_assessment_html.py
+│   ├── generate_docker_cis_html.py
 │   └── generate_docker_cis_csv.py
-└── tools/
-    └── docker-bench-security/
+└── tools/                      # External dependencies (outside project bundle)
+
+# External
+$HOME/tools/
+└── docker-bench-security/
 ```
 
 ---
@@ -301,10 +304,10 @@ hardenx/
 
 # Architecture Overview
 
-HardenX follows a layered architecture consisting of:
+Adhiambo follows a layered architecture:
 
-1. Presentation Layer (`hardenx`)
-2. Orchestration Layer
+1. Platform Orchestrator (`adhiambo.sh`) — calls `cis_checks.sh` for Docker assessments
+2. Docker Engine Entry Point (`cis_checks.sh`) — orchestrates Trivy and Docker Bench
 3. Engine Layer (`engine_trivy.sh`, `engine_docker_cis.sh`)
 4. Reporting Layer (`exporter.sh`, Python reporters)
 5. Utility Layer (`utils.sh`)
@@ -320,7 +323,7 @@ For detailed design documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Scan an Image from Docker Hub
 
 ```bash
-./hardenx
+./cis_checks.sh
 ```
 
 Selections:
@@ -333,7 +336,7 @@ nginx:latest
 ## Scan All Images
 
 ```bash
-./hardenx -q
+./cis_checks.sh -q
 ```
 
 Press Enter at the image selection prompt (default `[2]`).
@@ -341,21 +344,21 @@ Press Enter at the image selection prompt (default `[2]`).
 ## Run a Full Security Assessment
 
 ```bash
-./hardenx -A
+./cis_checks.sh -A
 ```
 
 ---
 
 # Command-Line Options
 
-| Option | Description |
-|------|------|
-| `-A` | Full Security Assessment |
-| `-V` | Vulnerability Scan |
-| `-C` | Docker CIS Compliance Scan |
-| `-q` | Quiet mode |
-| `-v` | Verbose mode |
-| `-h` | Help |
+| Option | Long Form | Description |
+|------|------|------|
+| `-A` | `--full-assessment` | Full Security Assessment |
+| `-V` | `--vulnerability-scan` | Vulnerability Scan |
+| `-C` | `--docker-cis` | Docker CIS Compliance Scan |
+| `-q` | `--quiet` | Quiet mode |
+| `-v` | `--verbose` | Verbose mode |
+| `-h`, `-H` | `--help` | Help |
 
 ---
 
@@ -369,11 +372,11 @@ Press Enter at the image selection prompt (default `[2]`).
 - zip
 - rsync
 - Python 3
+- Docker Bench for Security (installed at `$HOME/tools/docker-bench-security`)
 
 ## Python Libraries
 
 - openpyxl
-- pandas
 
 ---
 
@@ -381,33 +384,44 @@ Press Enter at the image selection prompt (default `[2]`).
 
 | Code | Meaning |
 |------|------|
-| `0` | Success |
-| `1` | Scan failure |
+| `0` | Success — scan completed, no CRITICAL findings |
+| `1` | Scan failure or dependency installation declined |
 | `10` | CRITICAL vulnerabilities detected |
 
 ---
 
 # Supported Registries
 
-- Docker Hub
-- GitHub Container Registry (GHCR)
-- Amazon ECR
-- Azure Container Registry (ACR)
-- Google Artifact Registry
-- Private OCI registries
+Adhiambo supports images from any registry accessible via `docker pull`. Pull the image manually before running a scan:
+
+```bash
+docker pull nginx:latest
+docker pull ghcr.io/org/app:v1
+docker pull myregistry.company.com/backend:prod
+```
+
+Supported registries include Docker Hub, GitHub Container Registry (GHCR), Amazon ECR, Azure Container Registry, Google Artifact Registry, and private OCI registries.
+
+> **Note:** Automated registry authentication (login/logout flow) is not yet implemented. Images must be pulled manually before scanning. Registry authentication is tracked as a planned feature — see [Roadmap](#roadmap).
 
 ---
 
 # CI/CD Integration
 
-Example GitHub Actions step:
+Use Adhiambo exit codes to fail builds when critical vulnerabilities are detected:
 
 ```yaml
-- name: Run HardenX
-  run: ./hardenx -A -q
+- name: Run Adhiambo Docker Assessment
+  run: ./cis_checks.sh -A -q
+
+- name: Archive Reports
+  uses: actions/upload-artifact@v3
+  with:
+    name: security-reports
+    path: reports/
 ```
 
-Use HardenX exit codes to fail builds when critical vulnerabilities are detected.
+> **Note:** Full non-interactive CI mode with flag-based image selection is planned. Currently, `-A` still prompts for image selection.
 
 ---
 
@@ -416,7 +430,7 @@ Use HardenX exit codes to fail builds when critical vulnerabilities are detected
 ## Validate Shell Syntax
 
 ```bash
-bash -n hardenx
+bash -n cis_checks.sh
 bash -n modules/*.sh
 ```
 
@@ -440,36 +454,36 @@ sudo usermod -aG docker $USER
 newgrp docker
 ```
 
+## Docker Bench for Security Not Found
+
+Ensure Docker Bench is cloned to the correct location:
+
+```bash
+git clone https://github.com/docker/docker-bench-security.git \
+    $HOME/tools/docker-bench-security
+```
+
+Then verify `DOCKER_BENCH_DIR` in `config.sh` points to the correct path.
+
 ---
 
 # Roadmap
 
-- PDF executive reports
-- CVSS-based risk scoring
-- Policy-based build gating
-- Registry authentication helpers
-- Scheduled assessments
-- SBOM generation
-- Kubernetes CIS Benchmark integration
+| Item | Description |
+|------|------|
+| Registry authentication | Automated login/logout flow for ECR, GCR, GHCR, and self-hosted registries |
+| SBOM generation | CycloneDX and SPDX SBOM output via Trivy |
+| CIS level filtering | Level 1 vs Level 2 check distinction |
+| Non-interactive / CI mode | Flag-based image selection for pipeline automation |
+| CIS Docker Benchmark v1.8.0 | Upgrade once Docker Bench for Security adds support |
+| Reporter decoupling | Standalone reporter reusable across all Adhiambo engines |
+| Ubuntu 24.04 LTS engine | CIS Ubuntu benchmark checks |
+| Rocky Linux engine | CIS Rocky Linux benchmark checks |
+| PostgreSQL engine | CIS PostgreSQL benchmark checks |
+| Kubernetes engine | CIS Kubernetes benchmark checks via kube-bench |
+| PDF executive reports | PDF output format |
+| Risk scoring | Aggregate risk score across vulnerability and compliance findings |
 
 ---
 
-# Contributing
-
-Contributions are welcome.
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
-
-- Development environment setup
-- Coding standards
-- Testing requirements
-- Pull request guidelines
-
----
-
-
----
-
-# Motto
-
-> **Scan. Harden. Comply.**
+*This README covers the Docker engine (`cis_checks.sh`). For the full Adhiambo platform documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).*
