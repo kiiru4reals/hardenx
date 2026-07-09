@@ -1,8 +1,8 @@
 # Adhiambo — PostgreSQL Engine Design Document
 ### Component: `engine/postgresql/cis_checks.sh`
 **Benchmark Reference:** CIS PostgreSQL 18 Benchmark v1.0.0 (03-27-2026)
-**Status:** Design — Pre-Implementation
-**Version:** 0.2
+**Status:** Design Complete — Ready for Implementation
+**Version:** 0.3
 
 ---
 
@@ -46,7 +46,15 @@ engine/postgresql/cis_checks.sh
                       ├── postgres_dml_privileges_<hostname>_<date>.txt
                       ├── postgres_dml_privileges_<hostname>_<date>.json
                       ├── postgres_roles_<hostname>_<date>.txt
-                      └── postgres_roles_<hostname>_<date>.json
+                      ├── postgres_roles_<hostname>_<date>.json
+                      ├── postgres_postmaster_params_<hostname>_<date>.txt
+                      ├── postgres_postmaster_params_<hostname>_<date>.json
+                      ├── postgres_sighup_params_<hostname>_<date>.txt
+                      ├── postgres_sighup_params_<hostname>_<date>.json
+                      ├── postgres_superuser_params_<hostname>_<date>.txt
+                      ├── postgres_superuser_params_<hostname>_<date>.json
+                      ├── postgres_user_params_<hostname>_<date>.txt
+                      └── postgres_user_params_<hostname>_<date>.json
 ```
 
 ---
@@ -186,6 +194,14 @@ All output files are written to the directory specified by `--output-dir` (defau
 | `postgres_dml_privileges_<hostname>_<date>.json` | Same as above in JSON format |
 | `postgres_roles_<hostname>_<date>.txt` | All users and predefined role assignments (Check 4.9) |
 | `postgres_roles_<hostname>_<date>.json` | Same as above in JSON format |
+| `postgres_postmaster_params_<hostname>_<date>.txt` | Postmaster runtime parameter snapshot (Check 6.3) |
+| `postgres_postmaster_params_<hostname>_<date>.json` | Same as above in JSON format |
+| `postgres_sighup_params_<hostname>_<date>.txt` | SIGHUP runtime parameter snapshot (Check 6.4) |
+| `postgres_sighup_params_<hostname>_<date>.json` | Same as above in JSON format |
+| `postgres_superuser_params_<hostname>_<date>.txt` | Superuser runtime parameter snapshot (Check 6.5) |
+| `postgres_superuser_params_<hostname>_<date>.json` | Same as above in JSON format |
+| `postgres_user_params_<hostname>_<date>.txt` | User runtime parameter snapshot (Check 6.6) |
+| `postgres_user_params_<hostname>_<date>.json` | Same as above in JSON format |
 
 ### 6.1 CSV Schema
 
@@ -888,6 +904,14 @@ WHERE (ro.rolcanlogin AND ro.rolsuper)
 
 **Console output:** Prints whether the `roletree` view was already present or was created.
 
+**Teardown:** After the check completes, the engine drops the `roletree` view regardless of whether it was pre-existing or created by the engine. This keeps the scan self-cleaning and leaves the database in the same state it was in before the scan ran.
+
+```sql
+DROP VIEW IF EXISTS roletree;
+```
+
+The teardown is also wired into the SIGINT/SIGTERM trap — if the scan is interrupted during or after check 4.8, the view is dropped before the engine exits.
+
 ---
 
 #### 4.9 Make use of predefined roles (Manual)
@@ -1061,9 +1085,13 @@ ORDER BY 1;
 SELECT name, setting FROM pg_settings WHERE context = 'postmaster' ORDER BY 1;
 ```
 
-**Status:** `MANUAL_REVIEW` — print the full output to console and compare against a known-good baseline.
+**Status:** `MANUAL_REVIEW` — output is printed to console and written to supplementary files for baseline comparison.
 
-**Remediation column:** `Compare the postmaster parameter output above against a previously archived baseline. Investigate and restore any unexpected changes. Changes require a server restart to take effect.`
+**Supplementary output:**
+- `postgres_postmaster_params_<hostname>_<date>.txt`
+- `postgres_postmaster_params_<hostname>_<date>.json`
+
+**Remediation column:** `Compare the postmaster parameter output in postgres_postmaster_params_<hostname>_<date>.txt against a previously archived baseline. Investigate and restore any unexpected changes. Changes require a server restart to take effect.`
 
 ---
 
@@ -1074,9 +1102,13 @@ SELECT name, setting FROM pg_settings WHERE context = 'postmaster' ORDER BY 1;
 SELECT name, setting FROM pg_settings WHERE context = 'sighup' ORDER BY 1;
 ```
 
-**Status:** `MANUAL_REVIEW` — print the full output to console and compare against a known-good baseline.
+**Status:** `MANUAL_REVIEW` — output is printed to console and written to supplementary files for baseline comparison.
 
-**Remediation column:** `Compare the SIGHUP parameter output above against a previously archived baseline. Restore any unexpected changes by editing postgresql.conf and running SELECT pg_reload_conf();`
+**Supplementary output:**
+- `postgres_sighup_params_<hostname>_<date>.txt`
+- `postgres_sighup_params_<hostname>_<date>.json`
+
+**Remediation column:** `Compare the SIGHUP parameter output in postgres_sighup_params_<hostname>_<date>.txt against a previously archived baseline. Restore any unexpected changes by editing postgresql.conf and running SELECT pg_reload_conf();`
 
 ---
 
@@ -1087,9 +1119,13 @@ SELECT name, setting FROM pg_settings WHERE context = 'sighup' ORDER BY 1;
 SELECT name, setting FROM pg_settings WHERE context = 'superuser' ORDER BY 1;
 ```
 
-**Status:** `MANUAL_REVIEW` — print the full output to console and compare against a known-good baseline.
+**Status:** `MANUAL_REVIEW` — output is printed to console and written to supplementary files for baseline comparison.
 
-**Remediation column:** `Compare the superuser parameter output above against a previously archived baseline. Restore any unexpected changes. Changes require a server restart.`
+**Supplementary output:**
+- `postgres_superuser_params_<hostname>_<date>.txt`
+- `postgres_superuser_params_<hostname>_<date>.json`
+
+**Remediation column:** `Compare the superuser parameter output in postgres_superuser_params_<hostname>_<date>.txt against a previously archived baseline. Restore any unexpected changes. Changes require a server restart.`
 
 ---
 
@@ -1100,9 +1136,13 @@ SELECT name, setting FROM pg_settings WHERE context = 'superuser' ORDER BY 1;
 SELECT name, setting FROM pg_settings WHERE context = 'user' ORDER BY 1;
 ```
 
-**Status:** `MANUAL_REVIEW` — print the full output to console. Validate that no user session has set unexpected runtime parameters.
+**Status:** `MANUAL_REVIEW` — output is printed to console and written to supplementary files for baseline comparison.
 
-**Remediation column:** `Validate user session parameters above. Revert any unauthorized changes. For attributes set on database entities, revert manually to default values.`
+**Supplementary output:**
+- `postgres_user_params_<hostname>_<date>.txt`
+- `postgres_user_params_<hostname>_<date>.json`
+
+**Remediation column:** `Compare the user parameter output in postgres_user_params_<hostname>_<date>.txt against a previously archived baseline. Revert any unauthorised changes. For attributes set on database entities, revert manually to default values.`
 
 ---
 
@@ -1186,6 +1226,40 @@ SELECT * FROM pg_available_extensions WHERE name='pgcrypto';
 ---
 
 ### Section 7 — Replication
+
+#### Replication Detection Gate
+
+Before any Section 7 check runs, the engine checks whether replication is actively configured on this host:
+
+```sql
+SELECT name, setting FROM pg_settings
+WHERE name IN ('archive_mode', 'max_wal_senders', 'wal_level')
+ORDER BY 1;
+```
+
+- **Replication detected** — `archive_mode` is `on`, OR `max_wal_senders` is greater than `0`, OR `wal_level` is `replica` or `logical`. The scan proceeds with all Section 7 checks.
+- **Replication not detected** — all Section 7 checks are skipped. The engine prints the following to the console and records each check as `SKIPPED` in the CSV:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SECTION 7 — Replication
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[INFO] Replication is not configured on this host.
+       Section 7 checks will be skipped.
+
+       The following checks were not evaluated:
+         7.1  Ensure a replication-only user is created and used for streaming replication
+         7.2  Ensure logging of replication commands is configured
+         7.3  Ensure base backups are configured and functional
+         7.4  Ensure WAL archiving is configured and functional
+         7.5  Ensure streaming replication parameters are configured correctly
+
+       If replication is required for this deployment, configure it
+       and re-run the scan to evaluate these checks.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Remediation column for all skipped Section 7 checks:** `Replication not detected on this host. If replication is required, configure it and re-run the scan.`
 
 ---
 
@@ -1368,6 +1442,14 @@ SELECT name, setting FROM pg_settings WHERE name IN (
     postgres_dml_privileges_prod-db-01_2026-04-10.json
     postgres_roles_prod-db-01_2026-04-10.txt
     postgres_roles_prod-db-01_2026-04-10.json
+    postgres_postmaster_params_prod-db-01_2026-04-10.txt
+    postgres_postmaster_params_prod-db-01_2026-04-10.json
+    postgres_sighup_params_prod-db-01_2026-04-10.txt
+    postgres_sighup_params_prod-db-01_2026-04-10.json
+    postgres_superuser_params_prod-db-01_2026-04-10.txt
+    postgres_superuser_params_prod-db-01_2026-04-10.json
+    postgres_user_params_prod-db-01_2026-04-10.txt
+    postgres_user_params_prod-db-01_2026-04-10.json
 
   Output directory: /opt/adhiambo/output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1387,8 +1469,11 @@ SELECT name, setting FROM pg_settings WHERE name IN (
 - `log_destination` is queried once at the start of Section 3 and its value gates all conditional checks in that section.
 - Check 6.7 (FIPS) is only executed on rpm-based systems (RHEL, CentOS, Rocky Linux). On apt-based systems it is marked `N/A`.
 - Supplementary output files (TXT and JSON) are written to the same directory as the CSV.
-- The engine does not modify any PostgreSQL configuration. All checks are read-only.
-- The `roletree` view created in check 4.8 is created in the database as a permanent object. This is by design per the CIS benchmark — it is used by the `set_user` audit workflow.
+- The engine does not modify any PostgreSQL configuration. All checks are read-only, with the exception of the `roletree` view created and immediately torn down in check 4.8.
+- Section 7 checks are gated on replication being actively configured. If replication is not detected, all Section 7 checks are marked `SKIPPED` and the operator is informed via console output listing the skipped checks.
+- The `roletree` view created in check 4.8 is always dropped after the check completes. The engine is self-cleaning — it leaves the database in the same state it was in before the scan. The teardown is also wired into the SIGINT/SIGTERM trap.
+- Sections 6.3, 6.4, 6.5, and 6.6 produce supplementary TXT and JSON output files in addition to console output, enabling operators to diff parameter snapshots across scan runs.
+- Checks 7.3 and 7.5 require standby host access to fully verify. These are marked `MANUAL_REVIEW` with instructions rather than `SKIPPED`, since the primary host checks (backup existence, pg_hba.conf entries) can still be assessed from the primary.
 
 ---
 
@@ -1415,10 +1500,7 @@ The following corrections were made after reading the actual CIS PostgreSQL 18 B
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Confirm whether Section 7 (Replication) checks should be gated on whether replication is actively configured on the host. If no replication is set up, all Section 7 checks will fail by design. | Open |
-| 2 | Define the handover interface contract between the current CSV reporting and the future `reporter.sh` component. | Open — pending Reporter design |
-| 3 | Confirm whether the `roletree` view created in check 4.8 should be dropped after the scan or left in place as a permanent management tool. The CIS benchmark implies it is a permanent view. | Open |
-| 4 | Confirm whether Section 6.3, 6.4, 6.5, and 6.6 (runtime parameter snapshots) should produce their own supplementary output files for baseline comparison, or whether the console output is sufficient. | Open |
+| 1 | Define the handover interface contract between the current CSV reporting and the future `reporter.sh` component. | Open — pending Reporter design |
 
 ---
 
