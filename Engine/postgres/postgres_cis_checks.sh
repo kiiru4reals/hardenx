@@ -2672,17 +2672,18 @@ run_section_8() {
 # =============================================================================
 print_summary() {
     # Count each status from the CSV (skip the header row)
+    # grep -c always outputs a number (0 when no matches) but exits 1 on no match.
+    # Use || true to suppress the non-zero exit — do NOT use || echo 0 as that
+    # appends a second value and breaks the arithmetic on the next line.
     local pass fail manual skipped na
-    pass=$(tail -n +2 "$CSV_FILE" 2>/dev/null \
-        | grep -c ',"PASS",' || echo 0)
-    fail=$(tail -n +2 "$CSV_FILE" 2>/dev/null \
-        | grep -c ',"FAIL",' || echo 0)
-    manual=$(tail -n +2 "$CSV_FILE" 2>/dev/null \
-        | grep -c ',"MANUAL_REVIEW",' || echo 0)
-    skipped=$(tail -n +2 "$CSV_FILE" 2>/dev/null \
-        | grep -c ',"SKIPPED",' || echo 0)
-    na=$(tail -n +2 "$CSV_FILE" 2>/dev/null \
-        | grep -c ',"N/A",' || echo 0)
+    pass=$(tail -n +2 "$CSV_FILE" 2>/dev/null | grep -c ',"PASS",' || true)
+    fail=$(tail -n +2 "$CSV_FILE" 2>/dev/null | grep -c ',"FAIL",' || true)
+    manual=$(tail -n +2 "$CSV_FILE" 2>/dev/null | grep -c ',"MANUAL_REVIEW",' || true)
+    skipped=$(tail -n +2 "$CSV_FILE" 2>/dev/null | grep -c ',"SKIPPED",' || true)
+    na=$(tail -n +2 "$CSV_FILE" 2>/dev/null | grep -c ',"N/A",' || true)
+    # Default each to 0 if empty (e.g. CSV file missing or unreadable)
+    pass=${pass:-0}; fail=${fail:-0}; manual=${manual:-0}
+    skipped=${skipped:-0}; na=${na:-0}
     local total=$(( pass + fail + manual + skipped + na ))
 
     echo ""
