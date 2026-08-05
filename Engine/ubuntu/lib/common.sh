@@ -3,8 +3,8 @@
 # Shared functions for output, result recording, and utilities
 
 # ─── Colour codes ────────────────────────────────────────────────────────────
-RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+RED=$'\033[0;31m'; YELLOW=$'\033[1;33m'; GREEN=$'\033[0;32m'
+CYAN=$'\033[0;36m'; BOLD=$'\033[1m'; RESET=$'\033[0m'
 
 # ─── Global counters ─────────────────────────────────────────────────────────
 COUNT_PASS=0; COUNT_FAIL=0; COUNT_MANUAL=0; COUNT_SKIPPED=0; COUNT_NA=0
@@ -91,10 +91,10 @@ flush_manual_block() {
     for entry in "${MANUAL_INLINE[@]}"; do
         IFS='|' read -r mid mdesc mrem <<< "$entry"
         echo ""
-        printf "--- %-10s  %s ---\n" "$mid" "$mdesc"
+        echo "--- ${mid}  ${mdesc} ---"
         # Indent the remediation/output
         while IFS= read -r line; do
-            printf "  %s\n" "$line"
+            printf "%s\n" "  $line"
         done <<< "$mrem"
         echo "---------------------------------------------------------------------"
 
@@ -108,17 +108,19 @@ flush_manual_block() {
 # Returns 0 if module is unavailable/disabled (PASS state), 1 if available
 check_kernel_module() {
     local mod="$1" modtype="${2:-fs}"
-    local found=0
+    local found=0 subpath="${mod//-/\/}"
+    local kernel_ver
+    kernel_ver=$(uname -r 2>/dev/null || true)
 
-    # Check if loadable module exists
+    # Check if loadable module exists using find (globstar not required)
     while IFS= read -r modpath; do
-        local subpath="${mod//-/\/}"
         if [[ -d "${modpath}/${subpath}" ]] && \
            [[ -n "$(ls -A "${modpath}/${subpath}" 2>/dev/null)" ]]; then
             found=1; break
         fi
-    done < <(readlink -e /usr/lib/modules/**/kernel/"$modtype" \
-             /lib/modules/**/kernel/"$modtype" 2>/dev/null | sort -u)
+    done < <(find /usr/lib/modules /lib/modules -maxdepth 4 \
+             -name "kernel" -type d -path "*/${kernel_ver}/*" \
+             -path "*/${modtype}" 2>/dev/null | sort -u)
 
     if [[ $found -eq 0 ]]; then
         # Module not present as loadable — check if built-in
@@ -263,7 +265,7 @@ write_manual_txt() {
             echo ""
             echo "Output captured at scan time:"
             while IFS= read -r line; do
-                printf "  %s\n" "$line"
+                printf "%s\n" "  $line"
             done <<< "$mrem"
             echo ""
             echo "---------------------------------------------------------------"
