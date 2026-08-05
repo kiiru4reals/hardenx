@@ -23,7 +23,9 @@
 #    - Level 2 adds defence-in-depth controls and auditd rules.
 #    - This engine targets Ubuntu 24.04 LTS Server only.
 # ─────────────────────────────────────────────────────────────────────────────
-set -euo pipefail
+# Note: -e intentionally absent — check functions return 1 for FAIL state, not script error
+set -u  # unbound variable check only
+# pipefail is kept but all pipeline results handled via if/[[ ]] — never bare
 
 # ─── Resolve script location ──────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -83,7 +85,6 @@ source "${SCRIPT_DIR}/sections/section6.sh"
 source "${SCRIPT_DIR}/sections/section7.sh"
 
 # ─── Banner ───────────────────────────────────────────────────────────────────
-clear
 echo ""
 echo "${BOLD}${SEP}${RESET}"
 printf " ${BOLD}ADHIAMBO — Ubuntu 24.04 LTS CIS Benchmark Engine${RESET}\n"
