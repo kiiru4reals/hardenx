@@ -110,7 +110,7 @@ preflight_host_profile() {
 
     # ── Infrastructure: hypervisor ──────────────────────────────────────────
     local virt_type
-    virt_type=$(systemd-detect-virt --vm 2>/dev/null)
+    virt_type=$(systemd-detect-virt --vm 2>/dev/null || echo "none")
     if [[ "$virt_type" != "none" && -n "$virt_type" ]]; then
         HOST_HYPERVISOR_DETECTED=true
         HOST_HYPERVISOR_TYPE="$virt_type"
@@ -235,6 +235,7 @@ preflight_host_profile() {
     fi
 
     # ── Active firewall ──────────────────────────────────────────────────────
+    HOST_MULTIPLE_FIREWALLS=""
     local active_fw=()
     if dpkg-query -s ufw &>/dev/null 2>&1 && \
        ufw status 2>/dev/null | grep -q "Status: active"; then
