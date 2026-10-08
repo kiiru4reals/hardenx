@@ -2,8 +2,8 @@
 
 ### Component: `adhiambo.sh`
 
-**Status:** Design — Pre-Implementation
-**Version:** 0.1
+**Status:** Implemented — engine integration in progress (see Section 5.2)
+**Version:** 1.0
 
 ---
 
@@ -31,15 +31,19 @@ researcher.sh
             ▼
 adhiambo.sh reads JSON → invokes Engine scripts in priority order
     │
-    ├── engine/ubuntu.sh      (if detected)
-    ├── engine/rocky.sh       (if detected)
-    ├── engine/postgresql.sh  (if detected)
-    ├── engine/docker.sh      (if detected)
-    └── engine/kubernetes.sh  (if detected)
+    ├── Engine/ubuntu/cis_checks.sh             (if detected)
+    ├── Engine/rocky-linux/cis_checks.sh        (if detected)
+    ├── Engine/postgres/postgres_cis_checks.sh  (if detected)
+    ├── Engine/docker/cis_checks.sh             (if detected)
+    └── Engine/kubernetes/cis_checks.sh         (if detected)
             │
             ▼
         reporter.sh  (once available; reporter_docker.sh in interim)
 ```
+
+All paths are resolved relative to the project root, which is the parent of the `Orchestrator/` directory `adhiambo.sh` lives in. The script can be invoked from any working directory.
+
+Throughout this document the engines are referred to by their technology key — `ubuntu`, `rocky`, `postgresql`, `docker`, `kubernetes` — which is also the value accepted by `--tech`. Each key maps to the script shown above.
 
 ---
 
@@ -188,16 +192,42 @@ This mode is appropriate when:
 
 ## 5. Argument Pass-Through
 
-The orchestrator passes the following arguments to the engines it invokes. Engines that do not support a given flag ignore it.
+The orchestrator forwards operator arguments to the components it invokes. Engines exit with an error on any flag they do not recognise, so the orchestrator forwards **only the flags each engine currently accepts**. The supported set per engine is held in the `ENGINE_FLAGS` table in `adhiambo.sh`.
+
+### 5.1 Target Contract
+
+Once every engine implements the full interface, the pass-through is:
 
 | Argument | Passed to |
 |---|---|
 | `--level` | All engines |
-| `--image` | `engine/docker.sh`, `engine/kubernetes.sh` |
-| `--sbom-format` | `engine/docker.sh` |
+| `--image` | `docker`, `kubernetes` |
+| `--sbom-format` | `docker` |
 | `--output-dir` | All engines, `researcher.sh` |
+| `--scan-id` | All engines, `researcher.sh` (internal — not an operator flag) |
 
-The orchestrator does not transform or interpret these arguments before passing them — it forwards the raw values provided by the operator. Each engine is responsible for validating its own inputs.
+### 5.2 Current State
+
+| Engine | `--level` | `--output-dir` | `--scan-id` | `--image` | `--sbom-format` |
+|---|---|---|---|---|---|
+| `ubuntu` | ✓ | ✓ | ✓ | — | — |
+| `rocky` | ✗ | ✗ | ✗ | — | — |
+| `postgresql` | ✗ | ✓ | ✗ | — | — |
+| `docker` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `kubernetes` | ✓ | ✓ | ✓ | ✗ | — |
+
+✓ forwarded · ✗ not yet supported by the engine, so not forwarded · — not applicable to this engine
+
+Consequences the operator should be aware of:
+
+- **`rocky`** takes no arguments. It runs the same checks regardless of `--level`, prints results to the console only, and writes no report file.
+- **`postgresql`** runs the same checks regardless of `--level`. It is interactive: it prompts for execution mode, database credentials, a user list and a log size before scanning, so it cannot run unattended.
+- **`kubernetes`** does not accept `--image`. If `--image` is supplied it is forwarded to `docker` only.
+- **`docker`** — `Engine/docker/cis_checks.sh` is currently a placeholder that accepts the flags and performs no checks. The HardenX tool under `Engine/docker/hardenx/` is not yet wired to it.
+
+When an engine gains support for a flag, add it to that engine's entry in `ENGINE_FLAGS` and update the table above.
+
+The orchestrator does not transform or interpret these arguments before passing them — it forwards the raw values provided by the operator, with the exception of `--output-dir`, which is resolved to an absolute path. Each engine is responsible for validating its own inputs.
 
 ---
 
@@ -207,12 +237,14 @@ When operating in auto-detection mode, the orchestrator invokes engines in the f
 
 | Priority | Engine | Rationale |
 |---|---|---|
-| 1 | `ubuntu.sh` or `rocky.sh` | OS-level checks must complete first. The Docker and Kubernetes engines depend on OS engine output for `OS_DEPENDENT` checks. Only one OS engine can run per host. |
-| 2 | `postgresql.sh` | Database checks are independent of container runtime findings. |
-| 3 | `docker.sh` | Requires OS engine output for `OS_DEPENDENT` checks. |
-| 4 | `kubernetes.sh` | Requires OS engine output for `OS_DEPENDENT` checks. |
+| 1 | `ubuntu` or `rocky` | OS-level checks must complete first. The Docker and Kubernetes engines depend on OS engine output for `OS_DEPENDENT` checks. Only one OS engine can run per host. |
+| 2 | `postgresql` | Database checks are independent of container runtime findings. |
+| 3 | `docker` | Requires OS engine output for `OS_DEPENDENT` checks. |
+| 4 | `kubernetes` | Requires OS engine output for `OS_DEPENDENT` checks. |
 
 In single-technology mode (`--tech`), only the specified engine runs. Invocation order is not relevant.
+
+**Technology name mapping:** The Researcher reports Rocky Linux as `rocky_linux` in `engines_to_invoke` (see the Researcher design document). The orchestrator maps this to its own engine key `rocky` when reading the JSON. All other names are identical in both components.
 
 ---
 
@@ -220,8 +252,11 @@ In single-technology mode (`--tech`), only the specified engine runs. Invocation
 
 All output files produced by the Researcher and Engines are written to the directory specified by `--output-dir` (default: current directory). The orchestrator is responsible for:
 
-- Passing `--output-dir` consistently to the Researcher and all Engine scripts.
+- Passing `--output-dir` consistently to the Researcher and to every Engine script that accepts it (see Section 5.2).
 - Verifying that the output directory exists and is writable before any component runs.
+- Resolving the directory to an absolute path, so every component writes to the same location regardless of its own working directory.
+
+After the Researcher exits, the orchestrator locates its JSON output by matching the current `scan_id` inside `adhiambo_researcher_*.json` files in the output directory. A Researcher file left behind by an earlier scan is never used.
 
 If the specified directory does not exist or is not writable, the orchestrator exits before invoking any component:
 
@@ -303,6 +338,18 @@ If the Researcher detects no supported technologies, the orchestrator exits clea
 After all components have completed, the orchestrator prints a closing footer. The footer shows a per-engine breakdown of all check statuses — PASS, FAIL, SKIPPED, MANUAL_REVIEW, and N/A — alongside the list of output files produced during the run.
 
 > **Note:** The per-engine status counts in the footer are sourced from the Reporter output. Full implementation of this footer is pending the Reporter design. Until the Reporter is in place, the footer lists output files only.
+
+> **Note — report file names:** The examples below show the target naming convention, `adhiambo_<technology>_<timestamp>.csv`. Not every engine follows it yet. The footer lists the file each engine actually writes, as defined in the `ENGINE_REPORT_GLOBS` table in `adhiambo.sh`, and only counts files written during the current scan:
+>
+> | Engine | Report listed in the footer |
+> |---|---|
+> | `ubuntu` | `adhiambo_ubuntu_<timestamp>.csv` |
+> | `rocky` | None — console output only |
+> | `postgresql` | `postgres_compliance_<hostname>_<date>.csv` |
+> | `docker` | None — the placeholder writes no report |
+> | `kubernetes` | `adhiambo_kubernetes_<timestamp>.csv` |
+>
+> For engines with no report file the footer prints `<technology>: no report file in output directory (see engine output above)`. If an engine that should write a report did not, the footer prints `adhiambo_<technology>_<not produced>`.
 
 **Auto-detection mode:**
 
@@ -405,16 +452,17 @@ adhiambo.sh
     │     └── Print scan header
     │
     ├── [Mode: Auto-detection]
-    │     ├── Invoke researcher.sh --output-dir <path>
-    │     ├── Read adhiambo_researcher_<timestamp>.json
+    │     ├── Invoke researcher.sh --output-dir <path> --scan-id <uuid>
+    │     ├── Read the adhiambo_researcher_<timestamp>.json carrying this scan_id
     │     └── Build ordered engine invocation list from engines_to_invoke
+    │           (rocky_linux is mapped to the rocky engine)
     │
     │   [Mode: Single-technology]
     │     ├── Validate --tech value
     │     └── Build single-item engine invocation list (no Researcher invoked)
     │
     ├── [Engine Invocation — in priority order]
-    │     ├── Invoke each engine with: --level, --output-dir, and any relevant passthrough flags
+    │     ├── Invoke each engine with the flags it accepts (see Section 5.2)
     │     ├── Print handoff message before each engine
     │     └── Wait for each engine to complete before invoking the next
     │
@@ -570,15 +618,15 @@ The orchestrator exits with code `4` if one or more technologies stopped mid-sca
 
 ### 11.5 Engine Not Found
 
-**Trigger:** An engine script that is required for the current scan is missing from the Adhiambo bundle (e.g. `engine/docker.sh` is absent from the deployment).
+**Trigger:** An engine script that is required for the current scan is missing from the Adhiambo bundle (e.g. `Engine/docker/cis_checks.sh` is absent from the deployment).
 
-This is a pre-flight check. The orchestrator verifies that all required engine scripts exist and are executable **before** invoking the Researcher or running any checks. If any required script is missing, the scan does not start.
+This is a pre-flight check. The orchestrator verifies that all required engine scripts exist and are executable **before** invoking the Researcher or running any checks. If any required script is missing, the scan does not start. In auto-detection mode the same check is applied to `Researcher/researcher.sh`.
 
 ```
-[ERROR] Engine script not found: engine/docker.sh
+[ERROR] Engine script not found for: docker
         The Adhiambo bundle may be incomplete or corrupted.
 
-        Expected location : /opt/adhiambo/engine/docker.sh
+        Expected location : /opt/adhiambo/Engine/docker/cis_checks.sh
         Scan ID           : a3f1c2d4-7e89-4b12-bc34-0f1e2d3a4c5b
 
         No scan was run.
@@ -609,6 +657,10 @@ The orchestrator exits with code `5`.
 | 2 | Define the non-zero exit code scheme. | **Closed** — Exit codes defined in Section 11: `0` success, `1` user interruption, `2` engine failure, `3` no technologies found, `4` technology stopped mid-scan (surfaced as engine failure), `5` engine not found. |
 | 3 | Confirm behaviour when `reporter.sh` replaces interim reporting helpers — orchestrator may need to invoke `reporter.sh` as a final step once all engines complete, rather than each engine invoking its own reporter. | Open — pending Reporter design |
 | 4 | Confirm whether the scan footer should include a roll-up of total PASS / FAIL counts across all engines, or whether per-engine summaries are sufficient. | **Closed** — Footer shows a per-engine breakdown of all statuses: PASS, FAIL, SKIPPED, MANUAL_REVIEW, and N/A. Full implementation pending Reporter design. |
+| 5 | Bring every engine up to the target pass-through contract in Section 5.1 (`--level`, `--output-dir`, `--scan-id` on all engines; `--image` on `kubernetes`) and the `adhiambo_<technology>_<timestamp>.csv` report name. Until then the orchestrator forwards a per-engine subset (Section 5.2). | Open — `rocky`, `postgresql`, `kubernetes` outstanding |
+| 6 | Replace the `Engine/docker/cis_checks.sh` placeholder with a real Docker engine entry point (wire in HardenX or implement the Docker Engine design). A Docker scan currently reports success without running any checks. | Open |
+| 7 | Engines signal "technology stopped mid-scan" with exit code `4` (Section 11.4). No engine implements this yet; all failures currently surface as engine failures (exit code `2`). | Open |
+| 8 | The Researcher detects Kubernetes on any node with an active kubelet, but the Kubernetes engine exits unless `kube-apiserver` is running. On worker nodes this surfaces as an engine failure. Align detection with the engine's control-plane-only scope. | Open |
 
 ---
 
