@@ -40,6 +40,11 @@ REPLICATION_ENABLED=0
 # roletree teardown flag — set when view is created in check 4.8
 ROLETREE_CREATED=0
 
+# Server access flag — 1 if running on the target PostgreSQL server (OS commands
+# available), 0 if running remotely (DB checks only via psql).
+# Set during pre-flight by prompt_server_access().
+SERVER_ACCESS=1
+
 # Output file paths — initialised after OUTPUT_DIR is known
 CSV_FILE=""
 ADMIN_PRIV_TXT="" ADMIN_PRIV_JSON=""
@@ -287,6 +292,19 @@ log_dest_includes() {
     echo "$LOG_DESTINATION" | grep -qi "$dest"
 }
 
+# Emit a SKIPPED result for a check that requires local server access.
+# Called at the top of every OS-level check when SERVER_ACCESS=0.
+_server_only_skipped() {
+    local check_id="$1"
+    local description="$2"
+    local std="$3"
+    print_check "SKIPPED" "$check_id" "$description" \
+        "server access not available — run this script on the target server to evaluate"
+    write_csv "$std" "SKIPPED" \
+        "This check requires local OS access to the target server. \
+Re-run cis_checks.sh directly on the PostgreSQL host to evaluate this control."
+}
+
 
 # =============================================================================
 # PRE-FLIGHT
@@ -305,7 +323,46 @@ validate_output_dir() {
     fi
 }
 
+prompt_server_access() {
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo " Execution Mode"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Is this script running directly on the target"
+    echo "  PostgreSQL server?"
+    echo ""
+    echo "  [y] Yes — OS-level and DB checks will both run."
+    echo "  [n] No  — Running remotely. Only DB checks will run."
+    echo "            OS-level checks will be marked SKIPPED."
+    echo ""
+    while true; do
+        read -rp "  Running on the target server? (y/n): " server_input
+        case "${server_input,,}" in
+            y|yes)
+                SERVER_ACCESS=1
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "[INFO] Mode: ON-SERVER — OS-level and DB checks enabled."
+                break
+                ;;
+            n|no)
+                SERVER_ACCESS=0
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "[INFO] Mode: REMOTE — DB checks only. OS-level checks will be SKIPPED."
+                break
+                ;;
+            *)
+                echo "  Please enter y or n."
+                ;;
+        esac
+    done
+}
+
 detect_os() {
+    # Only meaningful when running on the server — skip silently in remote mode
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        PKG_MANAGER="unknown"
+        return
+    fi
     echo ""
     echo "[INFO] Detecting package manager..."
     if command -v apt-get > /dev/null 2>&1; then
@@ -422,6 +479,10 @@ prompt_log_size() {
 
 check_1_1() {
     local STD="1.1 Ensure packages are obtained from authorized repositories"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "1.1" \
+            "Ensure packages are obtained from authorized repositories" "$STD"; return
+    fi
     echo ""
     echo "  Configured repositories:"
     if [[ "$PKG_MANAGER" == "apt" ]]; then
@@ -449,6 +510,9 @@ Remove any unauthorised repositories."
 
 check_1_2() {
     local STD="1.2 Install only required packages"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "1.2" "Install only required packages" "$STD"; return
+    fi
     echo ""
     echo "  Installed PostgreSQL packages:"
     if [[ "$PKG_MANAGER" == "apt" ]]; then
@@ -466,6 +530,9 @@ apt purge <pkg> (Debian) or dnf erase <pkg> (RHEL)."
 
 check_1_3() {
     local STD="1.3 Ensure systemd service files are enabled"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "1.3" "Ensure systemd service files are enabled" "$STD"; return
+    fi
     local services
     services=$(systemctl list-unit-files 2>/dev/null | grep -i "postgresql" | awk '{print $1}')
     if [[ -z "$services" ]]; then
@@ -496,6 +563,10 @@ Fix: systemctl enable <service-name>"
 
 check_1_4() {
     local STD="1.4 Ensure data cluster initialized successfully"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "1.4" \
+            "Ensure data cluster initialized successfully" "$STD"; return
+    fi
     # Look for a PG_VERSION file which indicates a valid cluster
     local data_dir
     data_dir=$(find /var/lib/pgsql /var/lib/postgresql -name "PG_VERSION" 2>/dev/null \
@@ -547,6 +618,10 @@ https://www.postgresql.org/support/security/ and https://www.postgresql.org/supp
 
 check_1_6() {
     local STD="1.6 Verify that PGPASSWORD is not set in users' profiles"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "1.6" \
+            "Verify that PGPASSWORD is not set in users' profiles" "$STD"; return
+    fi
     local matches
     matches=$(grep -l "PGPASSWORD" \
         /home/*/.bashrc /home/*/.profile /home/*/.bash_profile \
@@ -567,6 +642,10 @@ Remove it and use a .pgpass file or other secure authentication method instead."
 
 check_1_7() {
     local STD="1.7 Verify that the PGPASSWORD environment variable is not in use"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "1.7" \
+            "Verify that the PGPASSWORD environment variable is not in use" "$STD"; return
+    fi
     # Grep /proc/*/environ — exclude our own PID to avoid false positive
     local matches
     matches=$(sudo grep -rl "PGPASSWORD" /proc/*/environ 2>/dev/null \
@@ -602,6 +681,10 @@ run_section_1() {
 
 check_2_1() {
     local STD="2.1 Ensure the file permissions mask is correct"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "2.1" \
+            "Ensure the file permissions mask is correct" "$STD"; return
+    fi
     local umask_val
     umask_val=$(sudo -u postgres bash -c 'umask' 2>/dev/null | tr -d '[:space:]')
     if [[ -z "$umask_val" ]]; then
@@ -626,6 +709,10 @@ and sudo access is available."
 
 check_2_2() {
     local STD="2.2 Ensure extension directory has appropriate ownership and permissions"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "2.2" \
+            "Ensure extension directory has appropriate ownership and permissions" "$STD"; return
+    fi
     # Locate pg_config — try PATH first, then common locations
     local pg_config_bin
     pg_config_bin=$(command -v pg_config 2>/dev/null \
@@ -676,6 +763,10 @@ sudo chown root:root ${ext_dir} && sudo chmod 0755 ${ext_dir}"
 
 check_2_3() {
     local STD="2.3 Disable PostgreSQL command history"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "2.3" \
+            "Disable PostgreSQL command history" "$STD"; return
+    fi
     local findings=()
     while IFS= read -r hist_file; do
         if [[ -L "$hist_file" ]]; then
@@ -704,6 +795,10 @@ rm -f ~/.psql_history && ln -s /dev/null ~/.psql_history \
 
 check_2_4() {
     local STD="2.4 Ensure passwords are not stored in the service file"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "2.4" \
+            "Ensure passwords are not stored in the service file" "$STD"; return
+    fi
     local matches=""
     matches+=$(sudo find / -name .pg_service.conf -type f \
         -exec grep "password" {} \; 2>/dev/null || true)
@@ -1375,6 +1470,10 @@ run_section_3() {
 
 check_4_1() {
     local STD="4.1 Ensure interactive login is disabled"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "4.1" \
+            "Ensure interactive login is disabled" "$STD"; return
+    fi
     local shadow_entry
     shadow_entry=$(sudo grep "^postgres:" /etc/shadow 2>/dev/null | cut -d: -f1-2)
     if [[ -z "$shadow_entry" ]]; then
@@ -1401,6 +1500,10 @@ Lock it: sudo passwd -l postgres"
 
 check_4_2() {
     local STD="4.2 Ensure sudo is configured correctly"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "4.2" \
+            "Ensure sudo is configured correctly" "$STD"; return
+    fi
     if [[ "$USER_LIST_PROVIDED" -eq 0 ]]; then
         print_check "FAIL" "4.2" "Ensure sudo is configured correctly" \
             "no users provided at scan start"
@@ -1860,6 +1963,10 @@ run_section_4() {
 
 check_5_1() {
     local STD="5.1 Do not specify passwords in the command line"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "5.1" \
+            "Do not specify passwords in the command line" "$STD"; return
+    fi
     local findings=()
 
     # Check process list
@@ -1920,22 +2027,42 @@ Set a specific IP in postgresql.conf: listen_addresses = '<your_ip>' (requires r
 
 check_5_3() {
     local STD="5.3 Ensure login via local UNIX domain socket is configured correctly"
-    local hba_file
-    hba_file=$(sudo -u postgres psql -t -c "SHOW hba_file;" 2>/dev/null \
-        | tr -d '[:space:]')
-    if [[ -z "$hba_file" || ! -f "$hba_file" ]]; then
-        print_check "FAIL" "5.3" \
-            "Ensure login via local UNIX domain socket is configured correctly" \
-            "pg_hba.conf not found"
-        write_csv "$STD" "FAIL" \
-            "Could not locate pg_hba.conf. Ensure PostgreSQL is running and the \
+
+    if [[ "$SERVER_ACCESS" -eq 1 ]]; then
+        # On-server path: read pg_hba.conf directly
+        local hba_file
+        hba_file=$(sudo -u postgres psql -t -c "SHOW hba_file;" 2>/dev/null \
+            | tr -d '[:space:]')
+        if [[ -z "$hba_file" || ! -f "$hba_file" ]]; then
+            print_check "FAIL" "5.3" \
+                "Ensure login via local UNIX domain socket is configured correctly" \
+                "pg_hba.conf not found"
+            write_csv "$STD" "FAIL" \
+                "Could not locate pg_hba.conf. Ensure PostgreSQL is running and the \
 postgres OS user can query SHOW hba_file."
-        return
+            return
+        fi
+        local insecure
+        insecure=$(grep -E "^[[:space:]]*local" "$hba_file" 2>/dev/null \
+            | grep -vE "^[[:space:]]*#" \
+            | grep -vE "[[:space:]]peer[[:space:]]*$" || true)
+    else
+        # Remote path: use pg_hba_file_rules() view (available PostgreSQL 10+)
+        if [[ "${SKIP_DB_CHECKS:-1}" -eq 1 ]]; then
+            print_check "SKIPPED" "5.3" \
+                "Ensure login via local UNIX domain socket is configured correctly" \
+                "database credentials not provided"
+            write_csv "$STD" "SKIPPED" "Database credentials not provided."; return
+        fi
+        local insecure
+        insecure=$(run_pg_query \
+            "SELECT COUNT(*) FROM pg_hba_file_rules \
+WHERE type='local' \
+  AND auth_method NOT IN ('peer','scram-sha-256','cert');")
+        # Treat as string comparison — non-zero count means insecure entries exist
+        [[ "$insecure" == "0" ]] && insecure="" || insecure="non-peer local entries: $insecure"
     fi
-    local insecure
-    insecure=$(grep -E "^[[:space:]]*local" "$hba_file" 2>/dev/null \
-        | grep -vE "^[[:space:]]*#" \
-        | grep -vE "[[:space:]]peer[[:space:]]*$" || true)
+
     if [[ -z "$insecure" ]]; then
         print_check "PASS" "5.3" \
             "Ensure login via local UNIX domain socket is configured correctly"
@@ -1951,22 +2078,41 @@ Review and update to peer where appropriate: local all all peer"
 
 check_5_4() {
     local STD="5.4 Ensure login via host TCP/IP socket is configured correctly"
-    local hba_file
-    hba_file=$(sudo -u postgres psql -t -c "SHOW hba_file;" 2>/dev/null \
-        | tr -d '[:space:]')
-    if [[ -z "$hba_file" || ! -f "$hba_file" ]]; then
-        print_check "FAIL" "5.4" \
-            "Ensure login via host TCP/IP socket is configured correctly" \
-            "pg_hba.conf not found"
-        write_csv "$STD" "FAIL" "Could not locate pg_hba.conf."; return
+    local insecure=""
+
+    if [[ "$SERVER_ACCESS" -eq 1 ]]; then
+        # On-server path: read pg_hba.conf directly
+        local hba_file
+        hba_file=$(sudo -u postgres psql -t -c "SHOW hba_file;" 2>/dev/null \
+            | tr -d '[:space:]')
+        if [[ -z "$hba_file" || ! -f "$hba_file" ]]; then
+            print_check "FAIL" "5.4" \
+                "Ensure login via host TCP/IP socket is configured correctly" \
+                "pg_hba.conf not found"
+            write_csv "$STD" "FAIL" "Could not locate pg_hba.conf."; return
+        fi
+        insecure=$(grep -E "^[[:space:]]*(host|hostssl|hostnossl)[[:space:]]" \
+            "$hba_file" 2>/dev/null \
+            | grep -vE "^[[:space:]]*#" \
+            | grep -vE "127\.0\.0\.1|::1" \
+            | grep -E "[[:space:]](trust|password|ident|md5)[[:space:]]*$" || true)
+    else
+        # Remote path: use pg_hba_file_rules() view (available PostgreSQL 10+)
+        if [[ "${SKIP_DB_CHECKS:-1}" -eq 1 ]]; then
+            print_check "SKIPPED" "5.4" \
+                "Ensure login via host TCP/IP socket is configured correctly" \
+                "database credentials not provided"
+            write_csv "$STD" "SKIPPED" "Database credentials not provided."; return
+        fi
+        local count
+        count=$(run_pg_query \
+            "SELECT COUNT(*) FROM pg_hba_file_rules \
+WHERE type IN ('host','hostssl','hostnossl') \
+  AND address NOT IN ('127.0.0.1','::1') \
+  AND auth_method IN ('trust','password','ident','md5');")
+        [[ "$count" != "0" ]] && insecure="$count insecure remote host entries detected"
     fi
-    # Remote host entries (exclude loopback) using weak auth methods
-    local insecure
-    insecure=$(grep -E "^[[:space:]]*(host|hostssl|hostnossl)[[:space:]]" "$hba_file" \
-        2>/dev/null \
-        | grep -vE "^[[:space:]]*#" \
-        | grep -vE "127\.0\.0\.1|::1" \
-        | grep -E "[[:space:]](trust|password|ident|md5)[[:space:]]*$" || true)
+
     if [[ -z "$insecure" ]]; then
         print_check "PASS" "5.4" \
             "Ensure login via host TCP/IP socket is configured correctly"
@@ -2171,6 +2317,10 @@ entities, revert manually to default values."
 
 check_6_7() {
     local STD="6.7 Ensure FIPS 140-2 OpenSSL cryptography is used"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "6.7" \
+            "Ensure FIPS 140-2 OpenSSL cryptography is used" "$STD"; return
+    fi
     if [[ "$PKG_MANAGER" == "apt" ]]; then
         print_check "N/A" "6.7" \
             "Ensure FIPS 140-2 OpenSSL cryptography is used" \
@@ -2574,6 +2724,11 @@ ALTER SYSTEM SET temp_tablespaces='temp_tablespc'; SELECT pg_reload_conf();"
 
 check_8_2() {
     local STD="8.2 Ensure the backup and restore tool pgBackRest is installed and configured"
+    if [[ "$SERVER_ACCESS" -eq 0 ]]; then
+        _server_only_skipped "8.2" \
+            "Ensure the backup and restore tool pgBackRest is installed and configured" \
+            "$STD"; return
+    fi
     if ! command -v pgbackrest > /dev/null 2>&1; then
         print_check "FAIL" "8.2" \
             "Ensure the backup and restore tool pgBackRest is installed and configured" \
@@ -2728,16 +2883,10 @@ main() {
     # Step 2 — initialise output file paths and write CSV header
     init_output_files
 
-    # Step 3 — print scan header
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo " Adhiambo — PostgreSQL CIS Benchmark Engine"
-    echo " Benchmark : CIS PostgreSQL 18 Benchmark v1.0.0"
-    echo " Host      : ${HOSTNAME}"
-    echo " Date      : ${DATE}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    # Step 3 — ask the operator whether we are on-server or remote
+    prompt_server_access
 
-    # Step 4 — OS detection (exits if unsupported)
+    # Step 4 — OS detection (no-op in remote mode; exits if unsupported OS on-server)
     detect_os
 
     # Step 5 — pre-scan operator prompts
@@ -2745,10 +2894,26 @@ main() {
     prompt_user_list
     prompt_log_size
 
+    # Step 6 — print scan header (after prompts so mode is known)
+    local mode_label
+    if [[ "$SERVER_ACCESS" -eq 1 ]]; then
+        mode_label="ON-SERVER (OS + DB checks)"
+    else
+        mode_label="REMOTE (DB checks only)"
+    fi
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo " Adhiambo — PostgreSQL CIS Benchmark Engine"
+    echo " Benchmark : CIS PostgreSQL 18 Benchmark v1.0.0"
+    echo " Host      : ${HOSTNAME}"
+    echo " Date      : ${DATE}"
+    echo " Mode      : ${mode_label}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
     echo ""
     echo "[INFO] Starting compliance scan..."
 
-    # Step 6 — run all sections in order
+    # Step 7 — run all sections in order
     run_section_1
     run_section_2
     run_section_3
@@ -2758,7 +2923,7 @@ main() {
     run_section_7
     run_section_8
 
-    # Step 7 — print summary (teardown fires automatically via EXIT trap)
+    # Step 8 — print summary (teardown fires automatically via EXIT trap)
     print_summary
 }
 
