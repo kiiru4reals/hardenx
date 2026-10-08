@@ -60,6 +60,26 @@ readonly VALID_TECH_VALUES=("ubuntu" "rocky" "postgresql" "docker" "kubernetes")
 # Engines that carry OS_DEPENDENT checks — used for the footer Note line
 readonly OS_DEPENDENT_ENGINES=("docker" "kubernetes")
 
+# Flags each engine currently accepts. Engines reject flags they do not know,
+# so only the supported subset is forwarded.
+declare -A ENGINE_FLAGS=(
+    [ubuntu]="level output-dir scan-id"
+    [rocky]=""
+    [postgresql]="output-dir"
+    [docker]="level output-dir scan-id image sbom-format"
+    [kubernetes]="level output-dir scan-id"
+)
+
+# Report file each engine writes to the output directory, for the footer.
+# Empty means the engine does not write a report there yet.
+declare -A ENGINE_REPORT_GLOBS=(
+    [ubuntu]="adhiambo_ubuntu_*.csv"
+    [rocky]=""
+    [postgresql]="postgres_compliance_*.csv"
+    [docker]=""
+    [kubernetes]="adhiambo_kubernetes_*.csv"
+)
+
 # =============================================================================
 # DEFAULTS
 # =============================================================================
@@ -75,6 +95,7 @@ OUTPUT_DIR="."
 # =============================================================================
 
 SCAN_ID=""
+SCAN_START_EPOCH=""
 HOSTNAME_TARGET=""
 SCAN_HAS_ENGINE_FAILURE=false
 SCAN_HAS_MID_SCAN_STOP=false
@@ -356,23 +377,34 @@ print_scan_header() {
 # ENGINE INVOCATION
 # =============================================================================
 
+join_by() {
+    # join_by <separator> <item>...
+    local sep="$1"
+    shift
+    local out="${1:-}"
+    shift || true
+    local item
+    for item in "$@"; do
+        out+="${sep}${item}"
+    done
+    echo "$out"
+}
+
 build_engine_args() {
-    # Build the common argument string for a given engine
+    # Populate ENGINE_ARGS with the flags the given engine accepts
     local tech="$1"
-    local args=(
-        "--level" "${LEVEL}"
-        "--output-dir" "${OUTPUT_DIR}"
-        "--scan-id" "${SCAN_ID}"
-    )
-    if [[ "$tech" == "docker" || "$tech" == "kubernetes" ]]; then
-        if [[ -n "${IMAGE}" ]]; then
-            args+=("--image" "${IMAGE}")
-        fi
-    fi
-    if [[ "$tech" == "docker" ]]; then
-        args+=("--sbom-format" "${SBOM_FORMAT}")
-    fi
-    echo "${args[@]}"
+    local flag
+    ENGINE_ARGS=()
+    for flag in ${ENGINE_FLAGS[$tech]}; do
+        case "$flag" in
+            level)       ENGINE_ARGS+=("--level" "${LEVEL}") ;;
+            output-dir)  ENGINE_ARGS+=("--output-dir" "${OUTPUT_DIR}") ;;
+            scan-id)     ENGINE_ARGS+=("--scan-id" "${SCAN_ID}") ;;
+            image)       [[ -n "${IMAGE}" ]] && ENGINE_ARGS+=("--image" "${IMAGE}") ;;
+            sbom-format) ENGINE_ARGS+=("--sbom-format" "${SBOM_FORMAT}") ;;
+        esac
+    done
+    return 0
 }
 
 invoke_engine() {
@@ -383,8 +415,8 @@ invoke_engine() {
     echo ""
     echo "[INFO] Invoking engine: ${tech}"
 
-    # shellcheck disable=SC2046
-    bash "${script}" $(build_engine_args "$tech") || exit_code=$?
+    build_engine_args "$tech"
+    bash "${script}" "${ENGINE_ARGS[@]}" || exit_code=$?
 
     ENGINES_INVOKED+=("$tech")
 
@@ -438,9 +470,10 @@ run_auto_detection() {
         exit 2
     fi
 
-    # Locate the researcher JSON output
-    RESEARCHER_JSON=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "adhiambo_researcher_*.json" \
-        -newer "${RESEARCHER}" 2>/dev/null | sort | tail -n 1)
+    # Locate the researcher JSON output for this scan (matched on scan_id so a
+    # stale file from an earlier run is never picked up)
+    RESEARCHER_JSON=$(grep -l "\"scan_id\": \"${SCAN_ID}\"" \
+        "${OUTPUT_DIR}"/adhiambo_researcher_*.json 2>/dev/null | sort | tail -n 1 || true)
 
     if [[ -z "${RESEARCHER_JSON}" ]]; then
         echo "[ERROR] Researcher completed but no output JSON was found in: ${OUTPUT_DIR}"
@@ -452,7 +485,10 @@ run_auto_detection() {
     # Uses grep/sed to avoid a hard dependency on jq
     local engines_raw
     engines_raw=$(grep -o '"engines_to_invoke"[[:space:]]*:[[:space:]]*\[[^]]*\]' "${RESEARCHER_JSON}" \
-        | grep -o '"[a-z_]*"' | tr -d '"')
+        | sed 's/^[^[]*//' | grep -o '"[a-z_]*"' | tr -d '"' || true)
+
+    # The Researcher reports Rocky Linux as "rocky_linux"; the engine key is "rocky"
+    engines_raw="${engines_raw//rocky_linux/rocky}"
 
     if [[ -z "$engines_raw" ]]; then
         echo ""
@@ -470,9 +506,9 @@ run_auto_detection() {
     done
 
     local detected_list
-    detected_list=$(IFS=", "; echo "${ordered_engines[*]}")
+    detected_list=$(join_by ", " "${ordered_engines[@]}")
     local arrow_list
-    arrow_list=$(IFS=" → "; echo "${ordered_engines[*]}")
+    arrow_list=$(join_by " → " "${ordered_engines[@]}")
 
     echo "[INFO] Researcher complete. Technologies detected: ${detected_list}"
     echo "[INFO] Invoking engines in order: ${arrow_list}"
@@ -542,9 +578,13 @@ print_footer() {
 
     local tech
     for tech in "${ENGINES_INVOKED[@]}"; do
-        local csv_file
-        csv_file=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "adhiambo_${tech}_*.csv" 2>/dev/null \
-            | sort | tail -n 1)
+        local glob="${ENGINE_REPORT_GLOBS[$tech]}"
+        local csv_file=""
+        if [[ -n "$glob" ]]; then
+            # Only reports written during this scan count
+            csv_file=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "$glob" \
+                -newermt "@$((SCAN_START_EPOCH - 1))" 2>/dev/null | sort | tail -n 1)
+        fi
 
         local label=""
         case "${ENGINE_OUTCOMES[$tech]:-}" in
@@ -554,6 +594,8 @@ print_footer() {
 
         if [[ -n "$csv_file" ]]; then
             echo "    $(basename "$csv_file")${label}"
+        elif [[ -z "$glob" ]]; then
+            echo "    ${tech}: no report file in output directory (see engine output above)${label}"
         else
             echo "    adhiambo_${tech}_<not produced>${label}"
         fi
@@ -602,6 +644,8 @@ main() {
 
     # --- Validate output directory ---
     validate_output_dir
+    OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd)"
+    SCAN_START_EPOCH="$(date +%s)"
 
     # --- Generate scan ID ---
     if command -v uuidgen &>/dev/null; then
