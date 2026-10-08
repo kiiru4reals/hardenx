@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Section 6: Logging and Auditing
+# HardenX Ubuntu Engine — Section 6: Logging and Auditing
 
 section6_run() {
     print_section "6" "Logging and Auditing"

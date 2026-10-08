@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Reporter Wrapper
+# HardenX Ubuntu Engine — Reporter Wrapper
 #
 # Usage: reporter_ubuntu.sh --json <os_report.json> [--output-dir <dir>]
 #
@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 JSON_INPUT=""
-OUTPUT_DIR="/tmp/adhiambo"
+OUTPUT_DIR="/tmp/hardenx"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -41,8 +41,8 @@ SCAN_LEVEL=$(grep -o '"level":\s*[0-9]' "$JSON_INPUT" | grep -o '[0-9]')
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
 
 mkdir -p "$OUTPUT_DIR"
-CSV_FILE="${OUTPUT_DIR}/adhiambo_ubuntu_${TIMESTAMP}.csv"
-MANUAL_TXT="${OUTPUT_DIR}/adhiambo_ubuntu_manual_${TIMESTAMP}.txt"
+CSV_FILE="${OUTPUT_DIR}/hardenx_ubuntu_${TIMESTAMP}.csv"
+MANUAL_TXT="${OUTPUT_DIR}/hardenx_ubuntu_manual_${TIMESTAMP}.txt"
 export MANUAL_TXT
 
 # Reconstruct CSV_ROWS from JSON findings

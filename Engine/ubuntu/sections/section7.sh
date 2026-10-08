@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Section 7: System Maintenance
+# HardenX Ubuntu Engine — Section 7: System Maintenance
 
 section7_run() {
     print_section "7" "System Maintenance"

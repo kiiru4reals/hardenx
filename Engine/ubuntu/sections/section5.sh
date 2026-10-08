@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Section 5: Access Control
+# HardenX Ubuntu Engine — Section 5: Access Control
 
 section5_run() {
     print_section "5" "Access Control"

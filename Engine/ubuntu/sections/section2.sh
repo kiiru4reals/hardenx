@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Section 2: Services
+# HardenX Ubuntu Engine — Section 2: Services
 
 section2_run() {
     print_section "2" "Services"

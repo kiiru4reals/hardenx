@@ -1,4 +1,4 @@
-# Adhiambo — Docker Engine Design Document
+# HardenX — Docker Engine Design Document
 ### Component: `engine/docker.sh` + `reporter_docker.sh`
 **Benchmark Reference:** CIS Docker Benchmark v1.8.0
 **Docker Server Support:** v28 and above
@@ -9,15 +9,15 @@
 
 ## 1. Purpose
 
-This document defines the design for the Adhiambo Docker Engine (`engine/docker.sh`) and its accompanying temporary reporting helper (`reporter_docker.sh`). The Docker Engine implements automated CIS Benchmark v1.8.0 compliance checks, split across Level 1 and Level 2, against a target Docker environment.
+This document defines the design for the HardenX Docker Engine (`engine/docker.sh`) and its accompanying temporary reporting helper (`reporter_docker.sh`). The Docker Engine implements automated CIS Benchmark v1.8.0 compliance checks, split across Level 1 and Level 2, against a target Docker environment.
 
-The reporting helper is a stopgap component produced ahead of the main Adhiambo Reporter (`reporter.sh`) and will be retired once the main Reporter is ready. It mirrors the intended Reporter interface to ensure a clean handover.
+The reporting helper is a stopgap component produced ahead of the main HardenX Reporter (`reporter.sh`) and will be retired once the main Reporter is ready. It mirrors the intended Reporter interface to ensure a clean handover.
 
 ---
 
 ## 2. Invocation
 
-The Docker Engine is invoked from the main `adhiambo.sh` entrypoint or directly by the operator. The following flags are supported:
+The Docker Engine is invoked from the main `hardenx.sh` entrypoint or directly by the operator. The following flags are supported:
 
 ```bash
 bash engine/docker.sh [OPTIONS]
@@ -47,7 +47,7 @@ bash engine/docker.sh --help
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — Docker CIS Benchmark Engine
+ HardenX — Docker CIS Benchmark Engine
  Benchmark: CIS Docker Benchmark v1.8.0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -94,7 +94,7 @@ NOTES
   - Docker Scout must be installed separately for image checks.
     Install: https://docs.docker.com/scout/install/
   - All registry sessions are logged out at the end of every scan.
-  - Report output: adhiambo_docker_<timestamp>.csv
+  - Report output: hardenx_docker_<timestamp>.csv
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -225,7 +225,7 @@ docker info > /dev/null 2>&1
 ```
 [ERROR] Docker daemon is not running on this host.
 
-        Adhiambo detected that containerd is present, but this engine
+        HardenX detected that containerd is present, but this engine
         requires the Docker daemon and the docker CLI to run CIS checks.
 
         Containerd-only environments are outside the scope of this engine.
@@ -270,7 +270,7 @@ If Docker Scout is available but `--image` was not provided:
 With Docker Scout available and an image provided:
 
 ```bash
-docker scout cves <image> --format sarif --output /tmp/adhiambo_scout_cves.json
+docker scout cves <image> --format sarif --output /tmp/hardenx_scout_cves.json
 ```
 
 Findings from the CVE scan are summarised in the report. The path to the raw Scout output is included in the report notes.
@@ -279,16 +279,16 @@ Findings from the CVE scan are summarised in the report. The path to the raw Sco
 
 ```bash
 # CycloneDX (default)
-docker scout sbom <image> --format cyclonedx --output /tmp/adhiambo_sbom.cdx.json
+docker scout sbom <image> --format cyclonedx --output /tmp/hardenx_sbom.cdx.json
 
 # SPDX
-docker scout sbom <image> --format spdx --output /tmp/adhiambo_sbom.spdx.json
+docker scout sbom <image> --format spdx --output /tmp/hardenx_sbom.spdx.json
 ```
 
 The SBOM file path is captured in the report as a note on the relevant check row:
 
 ```
-SBOM available at: /tmp/adhiambo_sbom.cdx.json
+SBOM available at: /tmp/hardenx_sbom.cdx.json
 ```
 
 ---
@@ -340,7 +340,7 @@ The Docker Engine extends the standard three-status model from the README with t
 
 The Docker CIS Benchmark includes checks that operate at the host OS level — auditd rules for Docker-related files and directories, file and directory permission checks, kernel parameters, and systemd service configuration. These checks differ between Ubuntu and Rocky Linux and are fully owned by their respective OS engines (`engine/ubuntu.sh` and `engine/rocky.sh`).
 
-Rather than duplicating this logic inside the Docker engine, Adhiambo takes the following approach: when a full scan is run, both the OS engine and the Docker engine execute. The Docker engine reads the OS engine's output report for any `OS_DEPENDENT` checks and references the finding directly, rather than re-running the same check itself. Each OS-dependent check row in the Docker report cites the source OS engine check ID so findings are fully traceable.
+Rather than duplicating this logic inside the Docker engine, HardenX takes the following approach: when a full scan is run, both the OS engine and the Docker engine execute. The Docker engine reads the OS engine's output report for any `OS_DEPENDENT` checks and references the finding directly, rather than re-running the same check itself. Each OS-dependent check row in the Docker report cites the source OS engine check ID so findings are fully traceable.
 
 This means:
 
@@ -392,12 +392,12 @@ Defence-in-depth controls for environments requiring a more stringent posture. *
 The helper produces a single CSV file. The output path is:
 
 ```
-adhiambo_docker_<timestamp>.csv
+hardenx_docker_<timestamp>.csv
 ```
 
 ### 7.3 CSV Fields
 
-The CSV follows the four-column schema defined in the Adhiambo README:
+The CSV follows the four-column schema defined in the HardenX README:
 
 | Column | Description |
 |---|---|
@@ -411,7 +411,7 @@ The CSV follows the four-column schema defined in the Adhiambo README:
 When an SBOM is generated, the relevant image check row includes a note in the Remediation field:
 
 ```
-SBOM available at: /tmp/adhiambo_sbom.cdx.json
+SBOM available at: /tmp/hardenx_sbom.cdx.json
 ```
 
 ---
@@ -502,7 +502,7 @@ After all sections have run and before the teardown, a summary block is printed.
   ──────────────────
   TOTAL            32
 
-  Report saved to: adhiambo_docker_2026-04-10T1143.csv
+  Report saved to: hardenx_docker_2026-04-10T1143.csv
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -524,7 +524,7 @@ For registries that were explicitly logged into during the session (tracked in a
 docker logout <registry_hostname>
 ```
 
-This ensures the host is returned to a clean, unauthenticated state after every Adhiambo run. The operator must log in again for any subsequent operations requiring registry access.
+This ensures the host is returned to a clean, unauthenticated state after every HardenX run. The operator must log in again for any subsequent operations requiring registry access.
 
 A teardown summary is printed at the end of the run:
 
@@ -540,7 +540,7 @@ A teardown summary is printed at the end of the run:
 ## 10. Component Flow
 
 ```
-adhiambo.sh --tech docker --level <1|2> [--image <image>] [--sbom-format <format>]
+hardenx.sh --tech docker --level <1|2> [--image <image>] [--sbom-format <format>]
         │
         ▼
 engine/docker.sh
@@ -569,7 +569,7 @@ engine/docker.sh
         │     └── Print summary block to console (totals only, not written to CSV)
         │
         ├── [Reporter]
-        │     └── reporter_docker.sh -> adhiambo_docker_<timestamp>.csv
+        │     └── reporter_docker.sh -> hardenx_docker_<timestamp>.csv
         │
         └── [Teardown]
               └── docker logout (all sessions)

@@ -1,4 +1,4 @@
-# Adhiambo — PostgreSQL Engine Design Document
+# HardenX — PostgreSQL Engine Design Document
 ### Component: `engine/postgresql/cis_checks.sh`
 **Benchmark Reference:** CIS PostgreSQL 18 Benchmark v1.0.0 (03-27-2026)
 **Status:** Design Complete — Ready for Implementation
@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-This document defines the design for the Adhiambo PostgreSQL Engine (`engine/postgresql/cis_checks.sh`). The PostgreSQL Engine is responsible for running CIS Benchmark compliance checks against a PostgreSQL 18 installation and producing structured findings in CSV format, with supplementary TXT and JSON output files for checks that require operator review or downstream tooling integration.
+This document defines the design for the HardenX PostgreSQL Engine (`engine/postgresql/cis_checks.sh`). The PostgreSQL Engine is responsible for running CIS Benchmark compliance checks against a PostgreSQL 18 installation and producing structured findings in CSV format, with supplementary TXT and JSON output files for checks that require operator review or downstream tooling integration.
 
 The engine is self-contained. It does not delegate compliance logic to any external tool — all checks are implemented natively in Bash using `psql`, system commands, and file inspection. The engine handles its own OS detection independently and does not rely on the orchestrator for environment context.
 
@@ -17,7 +17,7 @@ The engine is self-contained. It does not delegate compliance logic to any exter
 ## 2. Role in the Architecture
 
 ```
-adhiambo.sh (entrypoint & orchestrator)
+hardenx.sh (entrypoint & orchestrator)
         │
         ▼
 engine/postgresql/cis_checks.sh
@@ -1395,7 +1395,7 @@ SELECT name, setting FROM pg_settings WHERE name IN (
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — PostgreSQL CIS Benchmark Engine
+ HardenX — PostgreSQL CIS Benchmark Engine
  Benchmark : CIS PostgreSQL 18 Benchmark v1.0.0
  Host      : prod-db-01
  Date      : 2026-04-10
@@ -1451,7 +1451,7 @@ SELECT name, setting FROM pg_settings WHERE name IN (
     postgres_user_params_prod-db-01_2026-04-10.txt
     postgres_user_params_prod-db-01_2026-04-10.json
 
-  Output directory: /opt/adhiambo/output
+  Output directory: /opt/hardenx/output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 

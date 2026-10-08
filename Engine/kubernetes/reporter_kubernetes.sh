@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Adhiambo — Kubernetes Reporting Helper
+#  HardenX — Kubernetes Reporting Helper
 #  Component  : reporter_kubernetes.sh
 #  Purpose    : Consumes parsed kube-bench findings from engine/kubernetes.sh
-#               and produces the standard four-column Adhiambo CSV report.
+#               and produces the standard four-column HardenX CSV report.
 #               This is a temporary stopgap until reporter.sh is ready.
 #               Interface is designed to be compatible with reporter.sh.
 #  Version    : 0.1

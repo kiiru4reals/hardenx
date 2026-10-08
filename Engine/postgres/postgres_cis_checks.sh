@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Adhiambo — PostgreSQL CIS Benchmark Engine
+# HardenX — PostgreSQL CIS Benchmark Engine
 # Component  : engine/postgresql/cis_checks.sh
 # Benchmark  : CIS PostgreSQL 18 Benchmark v1.0.0 (03-27-2026)
 # Version    : 1.0.0
@@ -57,7 +57,7 @@ USER_PARAMS_TXT="" USER_PARAMS_JSON=""
 
 # =============================================================================
 # TEARDOWN — fires on EXIT, SIGINT, SIGTERM
-# Drops the roletree view if Adhiambo created it, leaving the DB self-clean.
+# Drops the roletree view if HardenX created it, leaving the DB self-clean.
 # =============================================================================
 teardown() {
     if [[ "${ROLETREE_CREATED:-0}" -eq 1 && "${SKIP_DB_CHECKS:-1}" -eq 0 ]]; then
@@ -79,7 +79,7 @@ trap teardown EXIT SIGINT SIGTERM
 usage() {
 cat << 'USAGE_EOF'
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — PostgreSQL CIS Benchmark Engine
+ HardenX — PostgreSQL CIS Benchmark Engine
  Benchmark : CIS PostgreSQL 18 Benchmark v1.0.0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -103,7 +103,7 @@ EXAMPLES
     bash engine/postgresql/cis_checks.sh
 
   Run with specific output directory:
-    bash engine/postgresql/cis_checks.sh --output-dir /opt/adhiambo/output
+    bash engine/postgresql/cis_checks.sh --output-dir /opt/hardenx/output
 
 NOTES
   - sudo or root access is required for OS-level checks.
@@ -2903,7 +2903,7 @@ main() {
     fi
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo " Adhiambo — PostgreSQL CIS Benchmark Engine"
+    echo " HardenX — PostgreSQL CIS Benchmark Engine"
     echo " Benchmark : CIS PostgreSQL 18 Benchmark v1.0.0"
     echo " Host      : ${HOSTNAME}"
     echo " Date      : ${DATE}"

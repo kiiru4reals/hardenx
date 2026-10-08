@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Common Library
+# HardenX Ubuntu Engine — Common Library
 # Shared functions for output, result recording, and utilities
 
 # ─── Colour codes ────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ write_manual_txt() {
 
     {
         echo "${SEP}━━━━━━━━━━"
-        printf " Adhiambo — Ubuntu Manual Review Workbook\n"
+        printf " HardenX — Ubuntu Manual Review Workbook\n"
         printf " Host      : %s\n" "$hostname"
         printf " Scan ID   : %s\n" "$scan_id"
         printf " Level     : %s\n" "$level"
@@ -293,7 +293,7 @@ write_os_report() {
 
     {
         printf '{\n'
-        printf '  "adhiambo_version": "0.1",\n'
+        printf '  "hardenx_version": "0.1",\n'
         printf '  "engine": "ubuntu",\n'
         printf '  "scan_id": "%s",\n' "$scan_id"
         printf '  "timestamp": "%s",\n' "$ts"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Section 1: Initial Setup
+# HardenX Ubuntu Engine — Section 1: Initial Setup
 
 section1_run() {
     print_section "1" "Initial Setup"

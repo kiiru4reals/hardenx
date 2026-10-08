@@ -1,6 +1,6 @@
-# Adhiambo — Orchestrator Design Document
+# HardenX — Orchestrator Design Document
 
-### Component: `adhiambo.sh`
+### Component: `hardenx.sh`
 
 **Status:** Implemented — engine integration in progress (see Section 5.2)
 **Version:** 1.0
@@ -9,9 +9,9 @@
 
 ## 1. Purpose
 
-This document defines the design for the Adhiambo orchestrator (`adhiambo.sh`). The orchestrator is the single entry point for every Adhiambo scan. It is responsible for accepting operator input, invoking the Researcher, reading the Researcher's detection output, and invoking the relevant Engine scripts in the correct order.
+This document defines the design for the HardenX orchestrator (`hardenx.sh`). The orchestrator is the single entry point for every HardenX scan. It is responsible for accepting operator input, invoking the Researcher, reading the Researcher's detection output, and invoking the relevant Engine scripts in the correct order.
 
-`adhiambo.sh` owns the end-to-end scan lifecycle. It does not perform detection or compliance checks itself — those responsibilities belong to the Researcher and Engine layers respectively. Its role is coordination: ensuring the right components run, in the right order, with the right arguments.
+`hardenx.sh` owns the end-to-end scan lifecycle. It does not perform detection or compliance checks itself — those responsibilities belong to the Researcher and Engine layers respectively. Its role is coordination: ensuring the right components run, in the right order, with the right arguments.
 
 ---
 
@@ -21,15 +21,15 @@ This document defines the design for the Adhiambo orchestrator (`adhiambo.sh`). 
 Operator
     │
     ▼
-adhiambo.sh  ◄── entry point & orchestrator
+hardenx.sh  ◄── entry point & orchestrator
     │
     ▼
 researcher.sh
     │
-    └── adhiambo_researcher_<timestamp>.json
+    └── hardenx_researcher_<timestamp>.json
             │
             ▼
-adhiambo.sh reads JSON → invokes Engine scripts in priority order
+hardenx.sh reads JSON → invokes Engine scripts in priority order
     │
     ├── Engine/ubuntu/cis_checks.sh             (if detected)
     ├── Engine/rocky-linux/cis_checks.sh        (if detected)
@@ -41,7 +41,7 @@ adhiambo.sh reads JSON → invokes Engine scripts in priority order
         reporter.sh  (once available; reporter_docker.sh in interim)
 ```
 
-All paths are resolved relative to the project root, which is the parent of the `Orchestrator/` directory `adhiambo.sh` lives in. The script can be invoked from any working directory.
+All paths are resolved relative to the project root, which is the parent of the `Orchestrator/` directory `hardenx.sh` lives in. The script can be invoked from any working directory.
 
 Throughout this document the engines are referred to by their technology key — `ubuntu`, `rocky`, `postgresql`, `docker`, `kubernetes` — which is also the value accepted by `--tech`. Each key maps to the script shown above.
 
@@ -50,7 +50,7 @@ Throughout this document the engines are referred to by their technology key —
 ## 3. Invocation
 
 ```bash
-bash adhiambo.sh [OPTIONS]
+bash hardenx.sh [OPTIONS]
 
 Options:
   --level <1|2>           Scan level. Defaults to 1 if not specified.
@@ -71,30 +71,30 @@ Options:
 
 ```bash
 # Equivalent — both run a full auto-detected Level 1 scan
-bash adhiambo.sh
-bash adhiambo.sh --level 1
+bash hardenx.sh
+bash hardenx.sh --level 1
 ```
 
-**Single-technology scan:** The `--tech` flag bypasses the Researcher entirely and invokes only the specified engine directly. This is useful when the operator already knows which technology they want to assess, or when running Adhiambo against a single component in isolation.
+**Single-technology scan:** The `--tech` flag bypasses the Researcher entirely and invokes only the specified engine directly. This is useful when the operator already knows which technology they want to assess, or when running HardenX against a single component in isolation.
 
 ```bash
 # Run only the Docker engine at Level 2
-bash adhiambo.sh --tech docker --level 2 --image myrepo/myapp:latest
+bash hardenx.sh --tech docker --level 2 --image myrepo/myapp:latest
 ```
 
 **Help menu:** Invoking `--help` prints usage information and exits without running any scan.
 
 ```bash
-bash adhiambo.sh --help
+bash hardenx.sh --help
 ```
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — CIS Compliance & Infrastructure Hardening Engine
+ HardenX — CIS Compliance & Infrastructure Hardening Engine
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 USAGE
-  bash adhiambo.sh [OPTIONS]
+  bash hardenx.sh [OPTIONS]
 
 OPTIONS
   --level <1|2>
@@ -130,16 +130,16 @@ DEFAULTS
 
 EXAMPLES
   Full auto-detected scan at Level 1 (default):
-    bash adhiambo.sh
+    bash hardenx.sh
 
   Full auto-detected scan at Level 2:
-    bash adhiambo.sh --level 2
+    bash hardenx.sh --level 2
 
   Single-technology scan — Docker at Level 2 with an image:
-    bash adhiambo.sh --tech docker --level 2 --image myrepo/myapp:latest
+    bash hardenx.sh --tech docker --level 2 --image myrepo/myapp:latest
 
   Full scan with a specific output directory:
-    bash adhiambo.sh --output-dir /opt/adhiambo/output
+    bash hardenx.sh --output-dir /opt/hardenx/output
 
 NOTES
   - sudo or root access is required for OS-level and daemon-level checks.
@@ -157,7 +157,7 @@ NOTES
 
 ## 4. Scan Modes
 
-`adhiambo.sh` operates in one of two modes depending on whether `--tech` is provided.
+`hardenx.sh` operates in one of two modes depending on whether `--tech` is provided.
 
 ### 4.1 Auto-Detection Mode (default)
 
@@ -192,7 +192,7 @@ This mode is appropriate when:
 
 ## 5. Argument Pass-Through
 
-The orchestrator forwards operator arguments to the components it invokes. Engines exit with an error on any flag they do not recognise, so the orchestrator forwards **only the flags each engine currently accepts**. The supported set per engine is held in the `ENGINE_FLAGS` table in `adhiambo.sh`.
+The orchestrator forwards operator arguments to the components it invokes. Engines exit with an error on any flag they do not recognise, so the orchestrator forwards **only the flags each engine currently accepts**. The supported set per engine is held in the `ENGINE_FLAGS` table in `hardenx.sh`.
 
 ### 5.1 Target Contract
 
@@ -223,7 +223,7 @@ Consequences the operator should be aware of:
 - **`rocky`** takes no arguments. It runs the same checks regardless of `--level`, prints results to the console only, and writes no report file.
 - **`postgresql`** runs the same checks regardless of `--level`. It is interactive: it prompts for execution mode, database credentials, a user list and a log size before scanning, so it cannot run unattended.
 - **`kubernetes`** does not accept `--image`. If `--image` is supplied it is forwarded to `docker` only.
-- **`docker`** — `Engine/docker/cis_checks.sh` is currently a placeholder that accepts the flags and performs no checks. The HardenX tool under `Engine/docker/hardenx/` is not yet wired to it.
+- **`docker`** — `Engine/docker/cis_checks.sh` is currently a placeholder that accepts the flags and performs no checks. The Docker scanner under `Engine/docker/hardenx/` is not yet wired to it.
 
 When an engine gains support for a flag, add it to that engine's entry in `ENGINE_FLAGS` and update the table above.
 
@@ -256,12 +256,12 @@ All output files produced by the Researcher and Engines are written to the direc
 - Verifying that the output directory exists and is writable before any component runs.
 - Resolving the directory to an absolute path, so every component writes to the same location regardless of its own working directory.
 
-After the Researcher exits, the orchestrator locates its JSON output by matching the current `scan_id` inside `adhiambo_researcher_*.json` files in the output directory. A Researcher file left behind by an earlier scan is never used.
+After the Researcher exits, the orchestrator locates its JSON output by matching the current `scan_id` inside `hardenx_researcher_*.json` files in the output directory. A Researcher file left behind by an earlier scan is never used.
 
 If the specified directory does not exist or is not writable, the orchestrator exits before invoking any component:
 
 ```
-[ERROR] Output directory is not writable or does not exist: /opt/adhiambo/output
+[ERROR] Output directory is not writable or does not exist: /opt/hardenx/output
 
         No scan was run.
 ```
@@ -276,7 +276,7 @@ The orchestrator prints a header at the start of every scan run:
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — CIS Compliance & Infrastructure Hardening Engine
+ HardenX — CIS Compliance & Infrastructure Hardening Engine
  Scan ID  : a3f1c2d4-7e89-4b12-bc34-0f1e2d3a4c5b
  Host     : prod-server-01
  Level    : 2
@@ -330,7 +330,7 @@ As the orchestrator transitions between components, it prints brief handoff mess
 If the Researcher detects no supported technologies, the orchestrator exits cleanly after the Researcher summary without invoking any engines:
 
 ```
-[INFO] No supported technologies detected. Nothing to scan. Adhiambo will exit.
+[INFO] No supported technologies detected. Nothing to scan. HardenX will exit.
 ```
 
 ### 8.4 Scan Footer
@@ -339,17 +339,17 @@ After all components have completed, the orchestrator prints a closing footer. T
 
 > **Note:** The per-engine status counts in the footer are sourced from the Reporter output. Full implementation of this footer is pending the Reporter design. Until the Reporter is in place, the footer lists output files only.
 
-> **Note — report file names:** The examples below show the target naming convention, `adhiambo_<technology>_<timestamp>.csv`. Not every engine follows it yet. The footer lists the file each engine actually writes, as defined in the `ENGINE_REPORT_GLOBS` table in `adhiambo.sh`, and only counts files written during the current scan:
+> **Note — report file names:** The examples below show the target naming convention, `hardenx_<technology>_<timestamp>.csv`. Not every engine follows it yet. The footer lists the file each engine actually writes, as defined in the `ENGINE_REPORT_GLOBS` table in `hardenx.sh`, and only counts files written during the current scan:
 >
 > | Engine | Report listed in the footer |
 > |---|---|
-> | `ubuntu` | `adhiambo_ubuntu_<timestamp>.csv` |
+> | `ubuntu` | `hardenx_ubuntu_<timestamp>.csv` |
 > | `rocky` | None — console output only |
 > | `postgresql` | `postgres_compliance_<hostname>_<date>.csv` |
 > | `docker` | None — the placeholder writes no report |
-> | `kubernetes` | `adhiambo_kubernetes_<timestamp>.csv` |
+> | `kubernetes` | `hardenx_kubernetes_<timestamp>.csv` |
 >
-> For engines with no report file the footer prints `<technology>: no report file in output directory (see engine output above)`. If an engine that should write a report did not, the footer prints `adhiambo_<technology>_<not produced>`.
+> For engines with no report file the footer prints `<technology>: no report file in output directory (see engine output above)`. If an engine that should write a report did not, the footer prints `hardenx_<technology>_<not produced>`.
 
 **Auto-detection mode:**
 
@@ -387,12 +387,12 @@ After all components have completed, the orchestrator prints a closing footer. T
     TOTAL          49
 
   Output files:
-    adhiambo_researcher_2026-04-10T1143.json
-    adhiambo_ubuntu_2026-04-10T1143.csv
-    adhiambo_postgresql_2026-04-10T1143.csv
-    adhiambo_docker_2026-04-10T1143.csv
+    hardenx_researcher_2026-04-10T1143.json
+    hardenx_ubuntu_2026-04-10T1143.csv
+    hardenx_postgresql_2026-04-10T1143.csv
+    hardenx_docker_2026-04-10T1143.csv
 
-  Output directory: /opt/adhiambo/output
+  Output directory: /opt/hardenx/output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -414,9 +414,9 @@ After all components have completed, the orchestrator prints a closing footer. T
     TOTAL          49
 
   Output files:
-    adhiambo_docker_2026-04-10T1143.csv
+    hardenx_docker_2026-04-10T1143.csv
 
-  Output directory: /opt/adhiambo/output
+  Output directory: /opt/hardenx/output
 
   Note: Scan was run in single-technology mode (--tech docker).
         OS-dependent checks were marked SKIPPED — no OS engine report present.
@@ -442,7 +442,7 @@ The `scan_id` is also printed in the scan header (see Section 8.1).
 ## 10. Component Flow
 
 ```
-adhiambo.sh
+hardenx.sh
     │
     ├── [Startup]
     │     ├── Register SIGINT/SIGTERM trap → cleanup function
@@ -453,7 +453,7 @@ adhiambo.sh
     │
     ├── [Mode: Auto-detection]
     │     ├── Invoke researcher.sh --output-dir <path> --scan-id <uuid>
-    │     ├── Read the adhiambo_researcher_<timestamp>.json carrying this scan_id
+    │     ├── Read the hardenx_researcher_<timestamp>.json carrying this scan_id
     │     └── Build ordered engine invocation list from engines_to_invoke
     │           (rocky_linux is mapped to the rocky engine)
     │
@@ -519,8 +519,8 @@ When the trap fires, the orchestrator prints a message, runs its own cleanup, an
 [TEARDOWN]    Running cleanup...
 [TEARDOWN]    Done.
 
-Partial output files may exist in: /opt/adhiambo/output
-Adhiambo exited.
+Partial output files may exist in: /opt/hardenx/output
+HardenX exited.
 ```
 
 Any output files written up to the point of interruption are retained. They are noted as partial in the message so the operator is aware the report is incomplete.
@@ -549,12 +549,12 @@ The scan footer reflects the failure:
  SCAN COMPLETE (with errors)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Output files:
-    adhiambo_researcher_2026-04-10T1143.json
-    adhiambo_ubuntu_2026-04-10T1143.csv
-    adhiambo_docker_2026-04-10T1143.csv        [FAILED — incomplete]
-    adhiambo_kubernetes_2026-04-10T1143.csv
+    hardenx_researcher_2026-04-10T1143.json
+    hardenx_ubuntu_2026-04-10T1143.csv
+    hardenx_docker_2026-04-10T1143.csv        [FAILED — incomplete]
+    hardenx_kubernetes_2026-04-10T1143.csv
 
-  Output directory: /opt/adhiambo/output
+  Output directory: /opt/hardenx/output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -569,7 +569,7 @@ The orchestrator exits with code `2` if one or more engines failed, even if othe
 This is not an error condition. The Researcher ran correctly; there is simply nothing to scan.
 
 ```
-[INFO] No supported technologies detected. Nothing to scan. Adhiambo will exit.
+[INFO] No supported technologies detected. Nothing to scan. HardenX will exit.
 ```
 
 The Researcher JSON is retained as a scan artifact. No engine is invoked. The orchestrator exits with code `3`.
@@ -601,12 +601,12 @@ The orchestrator handles a `4` exit from an engine the same way it handles a `2`
  SCAN COMPLETE (with errors)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Output files:
-    adhiambo_researcher_2026-04-10T1143.json
-    adhiambo_ubuntu_2026-04-10T1143.csv
-    adhiambo_docker_2026-04-10T1143.csv        [INCOMPLETE — technology stopped mid-scan]
-    adhiambo_kubernetes_2026-04-10T1143.csv
+    hardenx_researcher_2026-04-10T1143.json
+    hardenx_ubuntu_2026-04-10T1143.csv
+    hardenx_docker_2026-04-10T1143.csv        [INCOMPLETE — technology stopped mid-scan]
+    hardenx_kubernetes_2026-04-10T1143.csv
 
-  Output directory: /opt/adhiambo/output
+  Output directory: /opt/hardenx/output
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -618,15 +618,15 @@ The orchestrator exits with code `4` if one or more technologies stopped mid-sca
 
 ### 11.5 Engine Not Found
 
-**Trigger:** An engine script that is required for the current scan is missing from the Adhiambo bundle (e.g. `Engine/docker/cis_checks.sh` is absent from the deployment).
+**Trigger:** An engine script that is required for the current scan is missing from the HardenX bundle (e.g. `Engine/docker/cis_checks.sh` is absent from the deployment).
 
 This is a pre-flight check. The orchestrator verifies that all required engine scripts exist and are executable **before** invoking the Researcher or running any checks. If any required script is missing, the scan does not start. In auto-detection mode the same check is applied to `Researcher/researcher.sh`.
 
 ```
 [ERROR] Engine script not found for: docker
-        The Adhiambo bundle may be incomplete or corrupted.
+        The HardenX bundle may be incomplete or corrupted.
 
-        Expected location : /opt/adhiambo/Engine/docker/cis_checks.sh
+        Expected location : /opt/hardenx/Engine/docker/cis_checks.sh
         Scan ID           : a3f1c2d4-7e89-4b12-bc34-0f1e2d3a4c5b
 
         No scan was run.
@@ -640,11 +640,11 @@ The orchestrator exits with code `5`.
 
 ## 12. Assumptions & Constraints
 
-- `adhiambo.sh` runs on the target Linux host with `bash` available.
+- `hardenx.sh` runs on the target Linux host with `bash` available.
 - `sudo` or root access is recommended. The orchestrator itself does not require elevated privileges, but many Engine checks do.
 - Engines are invoked sequentially, not in parallel. This keeps output readable and avoids race conditions on shared output files.
 - The orchestrator does not retry failed engines. If an engine exits with a non-zero status, it is logged as a failure and the remaining engines continue.
-- The `scan_id` is generated once per `adhiambo.sh` invocation and is shared across all components. Direct engine invocations (outside of `adhiambo.sh`) generate their own independent scan IDs.
+- The `scan_id` is generated once per `hardenx.sh` invocation and is shared across all components. Direct engine invocations (outside of `hardenx.sh`) generate their own independent scan IDs.
 - SIGINT and SIGTERM traps are registered as the first action at startup, before argument parsing or any component is invoked, to ensure the trap is active for the full script lifecycle. Engine-level traps for engine-specific teardown (e.g. Docker registry logout) are the responsibility of each engine and operate independently.
 
 ---
@@ -657,8 +657,8 @@ The orchestrator exits with code `5`.
 | 2 | Define the non-zero exit code scheme. | **Closed** — Exit codes defined in Section 11: `0` success, `1` user interruption, `2` engine failure, `3` no technologies found, `4` technology stopped mid-scan (surfaced as engine failure), `5` engine not found. |
 | 3 | Confirm behaviour when `reporter.sh` replaces interim reporting helpers — orchestrator may need to invoke `reporter.sh` as a final step once all engines complete, rather than each engine invoking its own reporter. | Open — pending Reporter design |
 | 4 | Confirm whether the scan footer should include a roll-up of total PASS / FAIL counts across all engines, or whether per-engine summaries are sufficient. | **Closed** — Footer shows a per-engine breakdown of all statuses: PASS, FAIL, SKIPPED, MANUAL_REVIEW, and N/A. Full implementation pending Reporter design. |
-| 5 | Bring every engine up to the target pass-through contract in Section 5.1 (`--level`, `--output-dir`, `--scan-id` on all engines; `--image` on `kubernetes`) and the `adhiambo_<technology>_<timestamp>.csv` report name. Until then the orchestrator forwards a per-engine subset (Section 5.2). | Open — `rocky`, `postgresql`, `kubernetes` outstanding |
-| 6 | Replace the `Engine/docker/cis_checks.sh` placeholder with a real Docker engine entry point (wire in HardenX or implement the Docker Engine design). A Docker scan currently reports success without running any checks. | Open |
+| 5 | Bring every engine up to the target pass-through contract in Section 5.1 (`--level`, `--output-dir`, `--scan-id` on all engines; `--image` on `kubernetes`) and the `hardenx_<technology>_<timestamp>.csv` report name. Until then the orchestrator forwards a per-engine subset (Section 5.2). | Open — `rocky`, `postgresql`, `kubernetes` outstanding |
+| 6 | Replace the `Engine/docker/cis_checks.sh` placeholder with a real Docker engine entry point (wire in the Docker scanner under `Engine/docker/hardenx/` or implement the Docker Engine design). A Docker scan currently reports success without running any checks. | Open |
 | 7 | Engines signal "technology stopped mid-scan" with exit code `4` (Section 11.4). No engine implements this yet; all failures currently surface as engine failures (exit code `2`). | Open |
 | 8 | The Researcher detects Kubernetes on any node with an active kubelet, but the Kubernetes engine exits unless `kube-apiserver` is running. On worker nodes this surfaces as an engine failure. Align detection with the engine's control-plane-only scope. | Open |
 

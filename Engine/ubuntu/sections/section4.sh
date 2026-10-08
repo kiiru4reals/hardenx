@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Section 4: Host Based Firewall
+# HardenX Ubuntu Engine — Section 4: Host Based Firewall
 
 section4_run() {
     print_section "4" "Host Based Firewall"

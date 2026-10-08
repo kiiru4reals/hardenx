@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Section 3: Network Configuration
+# HardenX Ubuntu Engine — Section 3: Network Configuration
 
 section3_run() {
     print_section "3" "Network"

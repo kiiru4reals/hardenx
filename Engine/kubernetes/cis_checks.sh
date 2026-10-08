@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Adhiambo — Kubernetes CIS Benchmark Engine
+#  HardenX — Kubernetes CIS Benchmark Engine
 #  Component  : engine/kubernetes.sh
 #  Benchmark  : CIS Kubernetes Benchmark v1.9.0 (via kube-bench v0.8.0)
 #  Scope      : Control Plane (v1) — kube-apiserver, etcd, controller-manager,
@@ -13,14 +13,14 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # Constants
 # -----------------------------------------------------------------------------
-readonly ADHIAMBO_VERSION="0.1"
+readonly HARDENX_VERSION="0.1"
 readonly KUBE_BENCH_VERSION="v0.8.0"
 readonly KUBE_BENCH_IMAGE="aquasec/kube-bench:${KUBE_BENCH_VERSION}"
 readonly KUBE_BENCH_DEB="kube-bench_0.8.0_linux_amd64.deb"
 readonly KUBE_BENCH_RPM="kube-bench_0.8.0_linux_amd64.rpm"
 readonly KUBE_BENCH_BASE_URL="https://github.com/aquasecurity/kube-bench/releases/download/${KUBE_BENCH_VERSION}"
 readonly KUBE_BENCH_TARGETS="master,etcd,controlplane,policies"
-readonly JOB_NAME="adhiambo-kube-bench"
+readonly JOB_NAME="hardenx-kube-bench"
 readonly JOB_TIMEOUT="120s"
 readonly SEPARATOR="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 readonly THIN_SEP="──────────────────"
@@ -45,7 +45,7 @@ OS_REPORT_PATH=""
 SECTION5_SKIP_REASON=""
 OS_DEPENDENT_SKIP_REASON="OS engine under maintenance"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H%M")
-RAW_JSON="/tmp/adhiambo_kubebench_${TIMESTAMP}.json"
+RAW_JSON="/tmp/hardenx_kubebench_${TIMESTAMP}.json"
 
 # Result counters
 COUNT_PASS=0
@@ -122,7 +122,7 @@ _print_header() {
   esac
 
   echo "${SEPARATOR}"
-  echo " Adhiambo — Kubernetes CIS Benchmark Engine"
+  echo " HardenX — Kubernetes CIS Benchmark Engine"
   echo " Benchmark : CIS Kubernetes Benchmark v1.9.0"
   echo " Scope     : Control Plane (v1)"
   echo " Scan ID   : ${SCAN_ID}"
@@ -134,7 +134,7 @@ _print_header() {
 
 _print_help() {
   echo "${SEPARATOR}"
-  echo " Adhiambo — Kubernetes CIS Benchmark Engine"
+  echo " HardenX — Kubernetes CIS Benchmark Engine"
   echo " Benchmark : CIS Kubernetes Benchmark v1.9.0"
   echo " Scope     : Control Plane (v1)"
   echo "${SEPARATOR}"
@@ -162,7 +162,7 @@ OPTIONS
       Kubernetes namespace for the kube-bench Job in Job Mode.
       Applies to Job Mode only. Ignored in Binary Mode and Install Mode.
       Defaults to kube-system.
-      Example: --namespace adhiambo
+      Example: --namespace hardenx
 
   --kube-bench-image <image:tag>
       Container image for the kube-bench Job in Job Mode.
@@ -192,13 +192,13 @@ EXAMPLES
     bash engine/kubernetes.sh --level 2 --kubeconfig /etc/kubernetes/admin.conf
 
   Run a Level 1 scan in Job Mode using a custom namespace:
-    bash engine/kubernetes.sh --namespace adhiambo
+    bash engine/kubernetes.sh --namespace hardenx
 
   Run Job Mode against an internal registry mirror (air-gapped):
     bash engine/kubernetes.sh --kube-bench-image registry.acme.internal/kube-bench:v0.8.0
 
   Run a Level 1 scan and write output to a specific directory:
-    bash engine/kubernetes.sh --output-dir /opt/adhiambo/output
+    bash engine/kubernetes.sh --output-dir /opt/hardenx/output
 
 NOTES
   - sudo or root access is required in Binary Mode and Install Mode.
@@ -208,7 +208,7 @@ NOTES
       1. Binary in PATH  →  Binary Mode
       2. kubectl + API   →  Job Mode
       3. apt or dnf      →  Install Mode (prompts for consent)
-  - Report output: adhiambo_kubernetes_<timestamp>.csv
+  - Report output: hardenx_kubernetes_<timestamp>.csv
 
 EOF
   echo "${SEPARATOR}"
@@ -270,7 +270,7 @@ _parse_args() {
         shift 2
         ;;
       --scan-id)
-        # Internal flag — passed by adhiambo.sh to share scan_id across components
+        # Internal flag — passed by hardenx.sh to share scan_id across components
         SCAN_ID="${2:?'--scan-id requires a value'}"
         shift 2
         ;;
@@ -372,8 +372,8 @@ _preflight_api() {
 # -----------------------------------------------------------------------------
 _preflight_os_report() {
   local ubuntu_report rocky_report
-  ubuntu_report=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "adhiambo_ubuntu_*.csv" 2>/dev/null | sort | tail -1)
-  rocky_report=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "adhiambo_rocky_*.csv" 2>/dev/null | sort | tail -1)
+  ubuntu_report=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "hardenx_ubuntu_*.csv" 2>/dev/null | sort | tail -1)
+  rocky_report=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "hardenx_rocky_*.csv" 2>/dev/null | sort | tail -1)
 
   if [[ -n "${ubuntu_report}" ]]; then
     OS_REPORT_PATH="${ubuntu_report}"
@@ -523,7 +523,7 @@ metadata:
   name: ${JOB_NAME}
   namespace: ${NAMESPACE}
   labels:
-    app: adhiambo
+    app: hardenx
     scan-id: "${SCAN_ID}"
 spec:
   template:
@@ -693,7 +693,7 @@ _exec_install() {
   echo ""
   echo "${SEPARATOR}"
   echo " [INSTALL] kube-bench was not found on this host."
-  echo "           Adhiambo can install it automatically to complete this scan,"
+  echo "           HardenX can install it automatically to complete this scan,"
   echo "           then remove it once the scan is finished."
   echo ""
   echo "           Package : kube-bench ${KUBE_BENCH_VERSION}"
@@ -876,7 +876,7 @@ for root in iter_json_objects(sys.argv[1]):
                 if not check_id:
                     continue
 
-                # Map kube-bench status to Adhiambo status
+                # Map kube-bench status to HardenX status
                 if kb_status == 'PASS':
                     status = 'PASS'
                     remediation = ''
@@ -1102,7 +1102,7 @@ _print_summary() {
 # Reporter — write CSV
 # -----------------------------------------------------------------------------
 _write_report() {
-  OUTPUT_FILE="${OUTPUT_DIR}/adhiambo_kubernetes_${TIMESTAMP}.csv"
+  OUTPUT_FILE="${OUTPUT_DIR}/hardenx_kubernetes_${TIMESTAMP}.csv"
 
   _info "Writing report to ${OUTPUT_FILE}..."
 
@@ -1119,7 +1119,7 @@ _write_report() {
 # Inline fallback — write CSV directly if reporter_kubernetes.sh is not present
 _write_report_inline() {
   _warn "reporter_kubernetes.sh not found. Writing CSV directly from engine."
-  OUTPUT_FILE="${OUTPUT_DIR}/adhiambo_kubernetes_${TIMESTAMP}.csv"
+  OUTPUT_FILE="${OUTPUT_DIR}/hardenx_kubernetes_${TIMESTAMP}.csv"
 
   {
     echo "Check Name,Description,Status,Remediation"

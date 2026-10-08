@@ -1,4 +1,4 @@
-# Adhiambo — Researcher Design Document
+# HardenX — Researcher Design Document
 ### Component: `researcher.sh`
 **Status:** Implemented
 **Version:** 1.0
@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-This document defines the design for the Adhiambo Researcher (`researcher.sh`). The Researcher is responsible for interrogating the target host, determining which of the five v1 supported technologies are actively running, and producing a structured JSON file that `adhiambo.sh` reads to determine which Engine scripts to invoke.
+This document defines the design for the HardenX Researcher (`researcher.sh`). The Researcher is responsible for interrogating the target host, determining which of the five v1 supported technologies are actively running, and producing a structured JSON file that `hardenx.sh` reads to determine which Engine scripts to invoke.
 
 The Researcher does not run compliance checks. Its sole responsibility is detection and reporting. All compliance logic belongs in the Engine layer.
 
@@ -15,27 +15,27 @@ The Researcher does not run compliance checks. Its sole responsibility is detect
 
 ## 2. Role in the Architecture
 
-The Researcher sits between the `adhiambo.sh` entrypoint and the Engine layer:
+The Researcher sits between the `hardenx.sh` entrypoint and the Engine layer:
 
 ```
-adhiambo.sh (entrypoint & orchestrator)
+hardenx.sh (entrypoint & orchestrator)
         │
         ▼
 researcher.sh
         │
-        └── adhiambo_researcher_<timestamp>.json
+        └── hardenx_researcher_<timestamp>.json
                 │
                 ▼
-adhiambo.sh reads JSON → invokes relevant Engine scripts
+hardenx.sh reads JSON → invokes relevant Engine scripts
 ```
 
-`adhiambo.sh` invokes the Researcher first, waits for it to complete, reads the JSON output, and then invokes only the Engine scripts that correspond to detected technologies. Engines for technologies that were not detected are not invoked.
+`hardenx.sh` invokes the Researcher first, waits for it to complete, reads the JSON output, and then invokes only the Engine scripts that correspond to detected technologies. Engines for technologies that were not detected are not invoked.
 
 ---
 
 ## 3. Invocation
 
-The Researcher is invoked by `adhiambo.sh` as part of the standard scan flow. It can also be invoked directly by an operator for diagnostic purposes.
+The Researcher is invoked by `hardenx.sh` as part of the standard scan flow. It can also be invoked directly by an operator for diagnostic purposes.
 
 ```bash
 bash researcher.sh [OPTIONS]
@@ -43,7 +43,7 @@ bash researcher.sh [OPTIONS]
 Options:
   --output-dir <path>   Directory to write the JSON output file.
                         Defaults to the current directory if not specified.
-  --scan-id <uuid>      Internal — passed by adhiambo.sh so the Researcher and all
+  --scan-id <uuid>      Internal — passed by hardenx.sh so the Researcher and all
                         engines share one scan ID. Not shown in the help menu.
                         If omitted, the Researcher generates its own.
   --help                Display the help menu and exit. Detection does not run.
@@ -67,7 +67,7 @@ bash researcher.sh --help
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — Researcher
+ HardenX — Researcher
  Detects active technologies on the target host
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -91,12 +91,12 @@ EXAMPLES
     bash researcher.sh
 
   Run detection and write output to a specific directory:
-    bash researcher.sh --output-dir /opt/adhiambo/output
+    bash researcher.sh --output-dir /opt/hardenx/output
 
 NOTES
   - sudo or root access is required for accurate detection of
     system-level services.
-  - Output file: adhiambo_researcher_<timestamp>.json
+  - Output file: hardenx_researcher_<timestamp>.json
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -204,16 +204,16 @@ Because Ubuntu and Rocky Linux are operating systems, only one of the two can be
 The Researcher writes its findings to a single JSON file:
 
 ```
-adhiambo_researcher_<timestamp>.json
+hardenx_researcher_<timestamp>.json
 ```
 
-The file is written to the directory specified by `--output-dir` (default: current directory). `adhiambo.sh` reads this file immediately after the Researcher exits to determine which engines to invoke. It identifies the file by the `scan_id` it passed in, so files from earlier scans in the same directory are ignored.
+The file is written to the directory specified by `--output-dir` (default: current directory). `hardenx.sh` reads this file immediately after the Researcher exits to determine which engines to invoke. It identifies the file by the `scan_id` it passed in, so files from earlier scans in the same directory are ignored.
 
 ### 6.2 Schema
 
 ```json
 {
-  "adhiambo_version": "0.1",
+  "hardenx_version": "0.1",
   "scan_id": "<uuid>",
   "timestamp": "<ISO-8601>",
   "hostname": "<hostname>",
@@ -257,8 +257,8 @@ The file is written to the directory specified by `--output-dir` (default: curre
 
 | Field | Description |
 |---|---|
-| `adhiambo_version` | The version of Adhiambo producing this output. |
-| `scan_id` | The UUID supplied by `adhiambo.sh` via `--scan-id`, or generated by the Researcher when it is invoked directly. Shared across the Researcher output and all Engine reports produced in the same `adhiambo.sh` invocation, enabling findings to be correlated back to a single scan session. |
+| `hardenx_version` | The version of HardenX producing this output. |
+| `scan_id` | The UUID supplied by `hardenx.sh` via `--scan-id`, or generated by the Researcher when it is invoked directly. Shared across the Researcher output and all Engine reports produced in the same `hardenx.sh` invocation, enabling findings to be correlated back to a single scan session. |
 | `timestamp` | ISO-8601 timestamp of when the Researcher completed detection. |
 | `hostname` | The hostname of the target machine as returned by the OS. |
 | `technologies` | Object containing one entry per supported technology. |
@@ -266,7 +266,7 @@ The file is written to the directory specified by `--output-dir` (default: curre
 | `technologies.<name>.version` | The version of the technology detected, if determinable. `null` if not detected or version could not be read. |
 | `technologies.<name>.detection_method` | The method or command that produced the detection result. |
 | `technologies.<name>.notes` | Any additional context relevant to the detection result, such as why detection failed or which fallback method was used. `null` if not applicable. |
-| `engines_to_invoke` | Array of technology names for which `detected` is `true`, using the same names as the keys under `technologies`. This is the field `adhiambo.sh` reads to determine which engines to invoke. Rocky Linux appears here as `rocky_linux`; `adhiambo.sh` maps it to its `rocky` engine. |
+| `engines_to_invoke` | Array of technology names for which `detected` is `true`, using the same names as the keys under `technologies`. This is the field `hardenx.sh` reads to determine which engines to invoke. Rocky Linux appears here as `rocky_linux`; `hardenx.sh` maps it to its `rocky` engine. |
 
 ### 6.4 Unsupported OS Version
 
@@ -293,7 +293,7 @@ As detection runs, the Researcher prints live output to the console.
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — Researcher
+ HardenX — Researcher
  Detecting active technologies on this host...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -327,7 +327,7 @@ After all five technologies have been evaluated, a summary is printed:
   Technologies detected   : ubuntu, postgresql, docker
   Engines to be invoked   : ubuntu, postgresql, docker
 
-  Detection report saved to: adhiambo_researcher_2026-04-10T1143.json
+  Detection report saved to: hardenx_researcher_2026-04-10T1143.json
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -340,9 +340,9 @@ If no supported technologies are detected:
   Technologies detected   : none
 
   No supported technologies were found running on this host.
-  No engines will be invoked. Adhiambo will exit.
+  No engines will be invoked. HardenX will exit.
 
-  Detection report saved to: adhiambo_researcher_2026-04-10T1143.json
+  Detection report saved to: hardenx_researcher_2026-04-10T1143.json
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -350,7 +350,7 @@ If no supported technologies are detected:
 
 ## 8. Engine Invocation Order
 
-Once `adhiambo.sh` reads the Researcher JSON, it invokes engines in the following fixed priority order, regardless of the order technologies appear in `engines_to_invoke`:
+Once `hardenx.sh` reads the Researcher JSON, it invokes engines in the following fixed priority order, regardless of the order technologies appear in `engines_to_invoke`:
 
 | Priority | Engine | Rationale |
 |---|---|---|
@@ -366,7 +366,7 @@ If neither Ubuntu nor Rocky Linux is detected, Docker and Kubernetes engines pro
 ## 9. Component Flow
 
 ```
-adhiambo.sh
+hardenx.sh
         │
         ▼
 researcher.sh
@@ -376,11 +376,11 @@ researcher.sh
         ├── Detect Docker
         ├── Detect Kubernetes
         │
-        ├── Write adhiambo_researcher_<timestamp>.json
+        ├── Write hardenx_researcher_<timestamp>.json
         └── Print detection summary to console
                 │
                 ▼
-adhiambo.sh reads engines_to_invoke from JSON
+hardenx.sh reads engines_to_invoke from JSON
         │
         ├── [If OS detected]      → invoke Engine/ubuntu/cis_checks.sh or Engine/rocky-linux/cis_checks.sh
         ├── [If PostgreSQL]       → invoke Engine/postgres/postgres_cis_checks.sh
@@ -402,7 +402,7 @@ Which flags each engine receives is described in the Orchestrator design documen
 - Only Ubuntu 24.04 LTS is supported in v1. Other Ubuntu versions are flagged but not passed to the Engine.
 - All detected Rocky Linux versions are supported in v1. Version-specific restrictions for Rocky Linux are planned for a future iteration.
 - The Researcher does not modify any system state. All detection is read-only.
-- The Researcher does not invoke engines itself. Engine invocation is the responsibility of `adhiambo.sh`.
+- The Researcher does not invoke engines itself. Engine invocation is the responsibility of `hardenx.sh`.
 
 ---
 
@@ -414,7 +414,7 @@ Which flags each engine receives is described in the Orchestrator design documen
 | 2 | `scan_id` generation method confirmed as standard `uuidgen`. | Closed |
 | 3 | Researcher JSON file confirmed as a permanent scan artifact. It is retained alongside Engine and Reporter outputs at the end of every scan. | Closed |
 | 4 | PostgreSQL version detection confirmed as `psql --version`. Works on both Ubuntu and Rocky Linux. Returns the client version, which is assumed to match the server version in v1. | Closed |
-| 5 | Kubernetes is marked `DETECTED` when any one of kubelet, kube-apiserver or kubectl connectivity is found, but the v1 Kubernetes Engine only runs on control plane nodes and exits when `kube-apiserver` is not running. On worker nodes this surfaces in `adhiambo.sh` as an engine failure. Decide whether detection should require `kube-apiserver` in v1. | Open |
+| 5 | Kubernetes is marked `DETECTED` when any one of kubelet, kube-apiserver or kubectl connectivity is found, but the v1 Kubernetes Engine only runs on control plane nodes and exits when `kube-apiserver` is not running. On worker nodes this surfaces in `hardenx.sh` as an engine failure. Decide whether detection should require `kube-apiserver` in v1. | Open |
 
 ---
 

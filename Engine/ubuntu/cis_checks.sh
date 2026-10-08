@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-#  Adhiambo Ubuntu Engine — ubuntu.sh
+#  HardenX Ubuntu Engine — ubuntu.sh
 #  CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0 Compliance Engine
 #
 #  Usage: ubuntu.sh [OPTIONS]
 #
 #  Options:
 #    --level <1|2>        Benchmark level to scan (default: 1)
-#    --output-dir <dir>   Directory for output files (default: /tmp/adhiambo)
+#    --output-dir <dir>   Directory for output files (default: /tmp/hardenx)
 #    --scan-id <id>       Override auto-generated scan ID
 #    --help               Show this help message
 #
-#  Output files (all prefixed with adhiambo_ubuntu):
+#  Output files (all prefixed with hardenx_ubuntu):
 #    *_<timestamp>.csv         4-column CSV compliance report
 #    *_os_<timestamp>.json     Machine-readable OS engine report (JSON)
 #    *_manual_<timestamp>.txt  Manual review workbook for operator sign-off
@@ -32,7 +32,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ─── Default parameters ───────────────────────────────────────────────────────
 SCAN_LEVEL=1
-OUTPUT_DIR="/tmp/adhiambo"
+OUTPUT_DIR="/tmp/hardenx"
 SCAN_ID=""
 
 # ─── Argument parsing ─────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ source "${SCRIPT_DIR}/sections/section7.sh"
 # ─── Banner ───────────────────────────────────────────────────────────────────
 echo ""
 echo "${BOLD}${SEP}${RESET}"
-printf " ${BOLD}ADHIAMBO — Ubuntu 24.04 LTS CIS Benchmark Engine${RESET}\n"
+printf " ${BOLD}HARDENX — Ubuntu 24.04 LTS CIS Benchmark Engine${RESET}\n"
 printf " Benchmark : CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0\n"
 printf " Level     : %s\n" "$SCAN_LEVEL"
 echo "${BOLD}${SEP}${RESET}"
@@ -125,9 +125,9 @@ export SCAN_ID TIMESTAMP HOSTNAME
 
 # ─── Output filenames ─────────────────────────────────────────────────────────
 mkdir -p "$OUTPUT_DIR"
-CSV_FILE="${OUTPUT_DIR}/adhiambo_ubuntu_${TIMESTAMP}.csv"
-JSON_FILE="${OUTPUT_DIR}/adhiambo_ubuntu_os_${TIMESTAMP}.json"
-MANUAL_TXT="${OUTPUT_DIR}/adhiambo_ubuntu_manual_${TIMESTAMP}.txt"
+CSV_FILE="${OUTPUT_DIR}/hardenx_ubuntu_${TIMESTAMP}.csv"
+JSON_FILE="${OUTPUT_DIR}/hardenx_ubuntu_os_${TIMESTAMP}.json"
+MANUAL_TXT="${OUTPUT_DIR}/hardenx_ubuntu_manual_${TIMESTAMP}.txt"
 
 export CSV_FILE JSON_FILE MANUAL_TXT
 

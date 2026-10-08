@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Adhiambo — CIS Compliance & Infrastructure Hardening Engine
-# Component : adhiambo.sh (Orchestrator)
+# HardenX — CIS Compliance & Infrastructure Hardening Engine
+# Component : hardenx.sh (Orchestrator)
 # Version   : 0.1
 # =============================================================================
 
@@ -23,7 +23,7 @@ cleanup() {
         echo "Partial output files may exist in: ${OUTPUT_DIR}"
     fi
     echo "[TEARDOWN]    Done."
-    echo "Adhiambo exited."
+    echo "HardenX exited."
     exit 1
 }
 
@@ -33,10 +33,10 @@ trap cleanup SIGINT SIGTERM
 # CONSTANTS
 # =============================================================================
 
-readonly ADHIAMBO_VERSION="0.1"
+readonly HARDENX_VERSION="0.1"
 readonly DIVIDER="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Paths are resolved relative to the Orchestrator directory adhiambo.sh lives in.
+# Paths are resolved relative to the Orchestrator directory hardenx.sh lives in.
 # The project root sits one level up.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -73,11 +73,11 @@ declare -A ENGINE_FLAGS=(
 # Report file each engine writes to the output directory, for the footer.
 # Empty means the engine does not write a report there yet.
 declare -A ENGINE_REPORT_GLOBS=(
-    [ubuntu]="adhiambo_ubuntu_*.csv"
+    [ubuntu]="hardenx_ubuntu_*.csv"
     [rocky]=""
     [postgresql]="postgres_compliance_*.csv"
     [docker]=""
-    [kubernetes]="adhiambo_kubernetes_*.csv"
+    [kubernetes]="hardenx_kubernetes_*.csv"
 )
 
 # =============================================================================
@@ -116,11 +116,11 @@ RESEARCHER_JSON=""
 
 print_help() {
     echo "${DIVIDER}"
-    echo " Adhiambo — CIS Compliance & Infrastructure Hardening Engine"
+    echo " HardenX — CIS Compliance & Infrastructure Hardening Engine"
     echo "${DIVIDER}"
     echo ""
     echo "USAGE"
-    echo "  bash adhiambo.sh [OPTIONS]"
+    echo "  bash hardenx.sh [OPTIONS]"
     echo ""
     echo "OPTIONS"
     echo "  --level <1|2>"
@@ -156,16 +156,16 @@ print_help() {
     echo ""
     echo "EXAMPLES"
     echo "  Full auto-detected scan at Level 1 (default):"
-    echo "    bash adhiambo.sh"
+    echo "    bash hardenx.sh"
     echo ""
     echo "  Full auto-detected scan at Level 2:"
-    echo "    bash adhiambo.sh --level 2"
+    echo "    bash hardenx.sh --level 2"
     echo ""
     echo "  Single-technology scan — Docker at Level 2 with an image:"
-    echo "    bash adhiambo.sh --tech docker --level 2 --image myrepo/myapp:latest"
+    echo "    bash hardenx.sh --tech docker --level 2 --image myrepo/myapp:latest"
     echo ""
     echo "  Full scan with a specific output directory:"
-    echo "    bash adhiambo.sh --output-dir /opt/adhiambo/output"
+    echo "    bash hardenx.sh --output-dir /opt/hardenx/output"
     echo ""
     echo "NOTES"
     echo "  - sudo or root access is required for OS-level and daemon-level checks."
@@ -243,7 +243,7 @@ parse_arguments() {
                 ;;
             *)
                 echo "[ERROR] Unrecognised option: \"$1\"" >&2
-                echo "        Run 'bash adhiambo.sh --help' for usage information." >&2
+                echo "        Run 'bash hardenx.sh --help' for usage information." >&2
                 exit 2
                 ;;
         esac
@@ -315,7 +315,7 @@ preflight_engines_auto() {
         local script="${ENGINE_SCRIPTS[$tech]}"
         if [[ ! -f "$script" || ! -x "$script" ]]; then
             echo "[ERROR] Engine script not found for: ${tech}"
-            echo "        The Adhiambo bundle may be incomplete or corrupted."
+            echo "        The HardenX bundle may be incomplete or corrupted."
             echo ""
             echo "        Expected location : ${script}"
             echo "        Scan ID           : ${SCAN_ID}"
@@ -334,7 +334,7 @@ preflight_engine_single() {
     local script="${ENGINE_SCRIPTS[$tech]}"
     if [[ ! -f "$script" || ! -x "$script" ]]; then
         echo "[ERROR] Engine script not found for: ${tech}"
-        echo "        The Adhiambo bundle may be incomplete or corrupted."
+        echo "        The HardenX bundle may be incomplete or corrupted."
         echo ""
         echo "        Expected location : ${script}"
         echo "        Scan ID           : ${SCAN_ID}"
@@ -347,7 +347,7 @@ preflight_engine_single() {
 preflight_researcher() {
     if [[ ! -f "${RESEARCHER}" || ! -x "${RESEARCHER}" ]]; then
         echo "[ERROR] Researcher script not found: researcher.sh"
-        echo "        The Adhiambo bundle may be incomplete or corrupted."
+        echo "        The HardenX bundle may be incomplete or corrupted."
         echo ""
         echo "        Expected location : ${RESEARCHER}"
         echo "        Scan ID           : ${SCAN_ID}"
@@ -365,7 +365,7 @@ print_scan_header() {
     local mode="$1"
     HOSTNAME_TARGET="$(hostname)"
     echo "${DIVIDER}"
-    echo " Adhiambo — CIS Compliance & Infrastructure Hardening Engine"
+    echo " HardenX — CIS Compliance & Infrastructure Hardening Engine"
     echo " Scan ID  : ${SCAN_ID}"
     echo " Host     : ${HOSTNAME_TARGET}"
     echo " Level    : ${LEVEL}"
@@ -460,7 +460,7 @@ run_auto_detection() {
 
     if [[ "$researcher_exit" -eq 3 ]]; then
         echo ""
-        echo "[INFO] No supported technologies detected. Nothing to scan. Adhiambo will exit."
+        echo "[INFO] No supported technologies detected. Nothing to scan. HardenX will exit."
         exit 3
     fi
 
@@ -473,7 +473,7 @@ run_auto_detection() {
     # Locate the researcher JSON output for this scan (matched on scan_id so a
     # stale file from an earlier run is never picked up)
     RESEARCHER_JSON=$(grep -l "\"scan_id\": \"${SCAN_ID}\"" \
-        "${OUTPUT_DIR}"/adhiambo_researcher_*.json 2>/dev/null | sort | tail -n 1 || true)
+        "${OUTPUT_DIR}"/hardenx_researcher_*.json 2>/dev/null | sort | tail -n 1 || true)
 
     if [[ -z "${RESEARCHER_JSON}" ]]; then
         echo "[ERROR] Researcher completed but no output JSON was found in: ${OUTPUT_DIR}"
@@ -492,7 +492,7 @@ run_auto_detection() {
 
     if [[ -z "$engines_raw" ]]; then
         echo ""
-        echo "[INFO] No supported technologies detected. Nothing to scan. Adhiambo will exit."
+        echo "[INFO] No supported technologies detected. Nothing to scan. HardenX will exit."
         exit 3
     fi
 
@@ -597,7 +597,7 @@ print_footer() {
         elif [[ -z "$glob" ]]; then
             echo "    ${tech}: no report file in output directory (see engine output above)${label}"
         else
-            echo "    adhiambo_${tech}_<not produced>${label}"
+            echo "    hardenx_${tech}_<not produced>${label}"
         fi
     done
 

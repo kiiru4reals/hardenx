@@ -1,4 +1,4 @@
-# Adhiambo — Ubuntu Engine Design Document
+# HardenX — Ubuntu Engine Design Document
 ### Component: `engine/ubuntu.sh` + `reporter_ubuntu.sh`
 **Benchmark Reference:** CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
 **Ubuntu Support:** 24.04 LTS only
@@ -10,7 +10,7 @@
 
 ## 1. Purpose
 
-This document defines the redesigned Adhiambo Ubuntu Engine (`engine/ubuntu.sh`) and its accompanying temporary reporting helper (`reporter_ubuntu.sh`). It **supersedes the prior Ubuntu engine implementation**, which is currently inactive pending the completion of this rewrite. References to the Ubuntu engine as "under maintenance" in the Docker and Kubernetes engine design documents relate to this rewrite; once this design is implemented, the `OS_DEPENDENT` skip placeholders in those engines must be replaced with live OS engine report lookups as described in each engine's open items.
+This document defines the redesigned HardenX Ubuntu Engine (`engine/ubuntu.sh`) and its accompanying temporary reporting helper (`reporter_ubuntu.sh`). It **supersedes the prior Ubuntu engine implementation**, which is currently inactive pending the completion of this rewrite. References to the Ubuntu engine as "under maintenance" in the Docker and Kubernetes engine design documents relate to this rewrite; once this design is implemented, the `OS_DEPENDENT` skip placeholders in those engines must be replaced with live OS engine report lookups as described in each engine's open items.
 
 The Ubuntu Engine implements automated CIS Benchmark v2.0.0 compliance checks against a target Ubuntu 24.04 LTS **server** host, covering initial setup, services, network configuration, logging and auditing, access controls, and system maintenance. It produces findings at Level 1 (foundational controls) or Level 2 (defence-in-depth controls), depending on the scan level specified at invocation.
 
@@ -18,7 +18,7 @@ The Ubuntu Engine implements automated CIS Benchmark v2.0.0 compliance checks ag
 
 Beyond its own compliance report, the Ubuntu Engine has a second responsibility unique to OS engines: it produces a **structured JSON sidecar** — the OS engine report — that is consumed by the Docker and Kubernetes engines when they evaluate their `OS_DEPENDENT` checks. The format of this sidecar is defined in full in Section 6. The Ubuntu Engine is the sole producer of this file; Docker and Kubernetes engines are read-only consumers. The Rocky Linux Engine will produce an equivalent file in the same schema — the format defined here is the agreed contract for all OS engines.
 
-The reporting helper is a stopgap component produced ahead of the main Adhiambo Reporter (`reporter.sh`) and will be retired once the main Reporter is ready. It mirrors the intended Reporter interface to ensure a clean handover.
+The reporting helper is a stopgap component produced ahead of the main HardenX Reporter (`reporter.sh`) and will be retired once the main Reporter is ready. It mirrors the intended Reporter interface to ensure a clean handover.
 
 ---
 
@@ -27,22 +27,22 @@ The reporting helper is a stopgap component produced ahead of the main Adhiambo 
 The Ubuntu Engine sits between the Researcher and the container/database engines in the standard scan flow. Because OS-level checks must complete before Docker and Kubernetes engines can resolve their `OS_DEPENDENT` findings, the Ubuntu Engine is always invoked first in the engine priority order (see `README-orchestrator.md`, Section 6).
 
 ```
-adhiambo.sh (entrypoint & orchestrator)
+hardenx.sh (entrypoint & orchestrator)
         │
         ▼
-researcher.sh  →  adhiambo_researcher_<timestamp>.json
+researcher.sh  →  hardenx_researcher_<timestamp>.json
         │
         ▼  [ubuntu detected]
 engine/ubuntu.sh
         │
         ├── reporter_ubuntu.sh
-        │         └── adhiambo_ubuntu_<timestamp>.csv         (human-readable compliance report)
+        │         └── hardenx_ubuntu_<timestamp>.csv         (human-readable compliance report)
         │
-        ├── adhiambo_ubuntu_os_<timestamp>.json               (OS engine report — consumed by
+        ├── hardenx_ubuntu_os_<timestamp>.json               (OS engine report — consumed by
         │                                                      Docker and Kubernetes engines
         │                                                      for OS_DEPENDENT checks)
         │
-        └── adhiambo_ubuntu_manual_<timestamp>.txt            (manual review workbook —
+        └── hardenx_ubuntu_manual_<timestamp>.txt            (manual review workbook —
                                                                all MANUAL_REVIEW checks
                                                                collected in one file for audit)
 ```
@@ -53,7 +53,7 @@ If neither the Ubuntu nor the Rocky Linux engine has run, Docker and Kubernetes 
 
 ## 3. Invocation
 
-The Ubuntu Engine is invoked from the main `adhiambo.sh` entrypoint or directly by the operator. The following flags are supported:
+The Ubuntu Engine is invoked from the main `hardenx.sh` entrypoint or directly by the operator. The following flags are supported:
 
 ```bash
 bash engine/ubuntu.sh [OPTIONS]
@@ -62,7 +62,7 @@ Options:
   --level <1|2>         Scan level. Defaults to 1 if not specified.
   --output-dir <path>   Directory to write output files.
                         Defaults to the current directory if not specified.
-  --scan-id <uuid>      Scan ID to embed in all output files, passed from adhiambo.sh.
+  --scan-id <uuid>      Scan ID to embed in all output files, passed from hardenx.sh.
                         If not provided, the engine generates its own UUID.
   --help                Display the help menu and exit. The scan does not run.
 ```
@@ -83,7 +83,7 @@ bash engine/ubuntu.sh --help
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — Ubuntu CIS Benchmark Engine
+ HardenX — Ubuntu CIS Benchmark Engine
  Benchmark : CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
  Supported : Ubuntu 24.04 LTS only
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -102,7 +102,7 @@ OPTIONS
       Defaults to the current directory if not specified.
 
   --scan-id <uuid>
-      Scan ID to embed in output files. Passed automatically by adhiambo.sh.
+      Scan ID to embed in output files. Passed automatically by hardenx.sh.
       If not provided, the engine generates its own UUID.
 
   --help
@@ -117,7 +117,7 @@ EXAMPLES
     bash engine/ubuntu.sh
 
   Run a Level 2 scan and write output to a specific directory:
-    bash engine/ubuntu.sh --level 2 --output-dir /opt/adhiambo/output
+    bash engine/ubuntu.sh --level 2 --output-dir /opt/hardenx/output
 
 NOTES
   - sudo or root access is required for the majority of checks.
@@ -127,10 +127,10 @@ NOTES
     Desktop environments detected on a supposedly server host will
     trigger a warning before the scan proceeds.
   - Three output files are produced per scan:
-      adhiambo_ubuntu_<timestamp>.csv      — human-readable compliance report
-      adhiambo_ubuntu_os_<timestamp>.json  — structured findings consumed by
+      hardenx_ubuntu_<timestamp>.csv      — human-readable compliance report
+      hardenx_ubuntu_os_<timestamp>.json  — structured findings consumed by
                                              the Docker and Kubernetes engines
-      adhiambo_ubuntu_manual_<timestamp>.txt — manual review workbook for
+      hardenx_ubuntu_manual_<timestamp>.txt — manual review workbook for
                                                all MANUAL_REVIEW checks
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -172,7 +172,7 @@ echo "$ID $VERSION_ID"
         No checks were run. No report has been generated.
 ```
 
-This pre-flight mirrors the detection logic in the Researcher (`README-researcher.md`, Section 5.2). When invoked via `adhiambo.sh` in auto-detection mode, the Researcher has already confirmed Ubuntu 24.04 is present — this check is a safety net for direct operator invocations.
+This pre-flight mirrors the detection logic in the Researcher (`README-researcher.md`, Section 5.2). When invoked via `hardenx.sh` in auto-detection mode, the Researcher has already confirmed Ubuntu 24.04 is present — this check is a safety net for direct operator invocations.
 
 ### 4.2 Privilege Check
 
@@ -186,7 +186,7 @@ The engine checks whether it is running as root, since the majority of checks re
 - **If not running as root:** A warning is printed and the scan still proceeds. Individual checks that fail due to insufficient permissions are recorded as `SKIPPED: Insufficient privileges` rather than causing the engine to abort.
 
 ```
-[WARN] Adhiambo is not running as root. Checks requiring elevated privileges
+[WARN] HardenX is not running as root. Checks requiring elevated privileges
        will be marked SKIPPED: Insufficient privileges rather than FAIL.
        For a complete scan, re-run with sudo or as root.
 ```
@@ -878,21 +878,21 @@ The OS engine report is a structured JSON file produced at the end of every Ubun
 
 The Docker and Kubernetes engines look up individual Ubuntu check IDs in this file rather than re-running OS-level checks themselves. This eliminates duplication of check logic across engines and ensures that OS-dependent findings in the Docker and Kubernetes reports are traceable back to the Ubuntu Engine finding that sourced them.
 
-The format defined here is the agreed schema for all OS engines. The Rocky Linux Engine will produce an equivalent file (`adhiambo_rocky_os_<timestamp>.json`) in the same structure. Downstream engines must handle both files using the same lookup logic, differentiating by the `engine` field in the JSON.
+The format defined here is the agreed schema for all OS engines. The Rocky Linux Engine will produce an equivalent file (`hardenx_rocky_os_<timestamp>.json`) in the same structure. Downstream engines must handle both files using the same lookup logic, differentiating by the `engine` field in the JSON.
 
 ### 6.2 File Naming and Location
 
 ```
-adhiambo_ubuntu_os_<timestamp>.json
+hardenx_ubuntu_os_<timestamp>.json
 ```
 
-The file is written to the same `--output-dir` as the CSV report. Downstream engines locate it by globbing `adhiambo_ubuntu_os_*.json` in the output directory. If multiple Ubuntu OS report files are present, the downstream engine uses the file whose `scan_id` matches the active scan. If no `scan_id` match is found, the most recently modified file is used as a fallback.
+The file is written to the same `--output-dir` as the CSV report. Downstream engines locate it by globbing `hardenx_ubuntu_os_*.json` in the output directory. If multiple Ubuntu OS report files are present, the downstream engine uses the file whose `scan_id` matches the active scan. If no `scan_id` match is found, the most recently modified file is used as a fallback.
 
 ### 6.3 Schema
 
 ```json
 {
-  "adhiambo_version": "0.1",
+  "hardenx_version": "0.1",
   "engine": "ubuntu",
   "scan_id": "<uuid>",
   "timestamp": "<ISO-8601>",
@@ -941,7 +941,7 @@ The `host_profile` object is included in the sidecar so downstream engines have 
 
 | Field | Description |
 |---|---|
-| `adhiambo_version` | The version of Adhiambo that produced this file. |
+| `hardenx_version` | The version of HardenX that produced this file. |
 | `engine` | Always `"ubuntu"` for this file. Allows downstream engines to confirm they are reading the correct OS engine report type. |
 | `scan_id` | The UUID shared across all components of the same scan invocation. |
 | `timestamp` | ISO-8601 timestamp of when the Ubuntu Engine completed. |
@@ -959,7 +959,7 @@ The `host_profile` object is included in the sidecar so downstream engines have 
 When a Docker or Kubernetes engine encounters an `OS_DEPENDENT` check, it performs the following lookup:
 
 ```
-1. Locate adhiambo_ubuntu_os_*.json in the output directory
+1. Locate hardenx_ubuntu_os_*.json in the output directory
        │
        ├── Match by scan_id if possible; fall back to most recently modified
        │
@@ -998,11 +998,11 @@ The downstream engine checks the `level` field before beginning evaluation and p
 
 ### 7.1 Scan Header
 
-The engine prints a header at the start of the scan. When invoked by `adhiambo.sh`, the orchestrator has already printed its own top-level header — the engine header identifies which engine is running and its benchmark reference.
+The engine prints a header at the start of the scan. When invoked by `hardenx.sh`, the orchestrator has already printed its own top-level header — the engine header identifies which engine is running and its benchmark reference.
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — Ubuntu CIS Benchmark Engine
+ HardenX — Ubuntu CIS Benchmark Engine
  Benchmark : CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
  Host      : prod-server-01
  Level     : 1
@@ -1130,7 +1130,7 @@ Checks marked `MANUAL_REVIEW` collect their command output and print it as a blo
  MANUAL REVIEW REQUIRED — SECTION 4.1
  The following checks require operator review.
  Output captured in CSV and in:
-   adhiambo_ubuntu_manual_2026-04-10T1143.txt
+   hardenx_ubuntu_manual_2026-04-10T1143.txt
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 --- 4.1.4.11  Ensure use of privileged commands is collected ---
@@ -1165,9 +1165,9 @@ After all sections have completed, a summary block is printed. This is **console
   ──────────────────
   TOTAL            194
 
-  Report saved to   : adhiambo_ubuntu_2026-04-10T1143.csv
-  OS engine report  : adhiambo_ubuntu_os_2026-04-10T1143.json
-  Manual review     : adhiambo_ubuntu_manual_2026-04-10T1143.txt
+  Report saved to   : hardenx_ubuntu_2026-04-10T1143.csv
+  OS engine report  : hardenx_ubuntu_os_2026-04-10T1143.json
+  Manual review     : hardenx_ubuntu_manual_2026-04-10T1143.txt
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -1184,14 +1184,14 @@ The OS engine report JSON (Section 6) and the manual review TXT file (Section 8.
 ### 8.2 Output
 
 ```
-adhiambo_ubuntu_<timestamp>.csv
+hardenx_ubuntu_<timestamp>.csv
 ```
 
 Written to the directory specified by `--output-dir`.
 
 ### 8.3 CSV Fields
 
-The CSV follows the four-column schema defined across all Adhiambo engines:
+The CSV follows the four-column schema defined across all HardenX engines:
 
 | Column | Description |
 |---|---|
@@ -1205,7 +1205,7 @@ The CSV follows the four-column schema defined across all Adhiambo engines:
 All `MANUAL_REVIEW` checks are collected into a dedicated plain-text workbook written at the end of the scan:
 
 ```
-adhiambo_ubuntu_manual_<timestamp>.txt
+hardenx_ubuntu_manual_<timestamp>.txt
 ```
 
 This file is intended as a standalone audit workbook. An operator can work through each manual check in sequence, record their findings in the space provided, and retain the completed file as evidence that manual review was performed. Each check entry is self-contained — it includes the CIS reference, the action required, the command that was run, the output captured at scan time, and a clearly labelled space for the operator's conclusion.
@@ -1214,7 +1214,7 @@ This file is intended as a standalone audit workbook. An operator can work throu
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — Ubuntu Manual Review Workbook
+ HardenX — Ubuntu Manual Review Workbook
  Host      : prod-server-01
  Scan ID   : a3f1c2d4-7e89-4b12-bc34-0f1e2d3a4c5b
  Level     : 1
@@ -1296,7 +1296,7 @@ This warning applies only to the bootloader password check and must not appear o
 ## 9. Component Flow
 
 ```
-adhiambo.sh --level <1|2> [--output-dir <path>] [--scan-id <uuid>]
+hardenx.sh --level <1|2> [--output-dir <path>] [--scan-id <uuid>]
         │
         ▼
 engine/ubuntu.sh
@@ -1398,13 +1398,13 @@ engine/ubuntu.sh
         │     └── Print status counts and all three output file paths (console only)
         │
         ├── [Reporter]
-        │     └── reporter_ubuntu.sh → adhiambo_ubuntu_<timestamp>.csv
+        │     └── reporter_ubuntu.sh → hardenx_ubuntu_<timestamp>.csv
         │
         ├── [OS Engine Report]
-        │     └── Write adhiambo_ubuntu_os_<timestamp>.json
+        │     └── Write hardenx_ubuntu_os_<timestamp>.json
         │
         └── [Manual Review TXT]
-              └── Write adhiambo_ubuntu_manual_<timestamp>.txt
+              └── Write hardenx_ubuntu_manual_<timestamp>.txt
 ```
 
 ---
@@ -1421,7 +1421,7 @@ engine/ubuntu.sh
 - When GDM is not installed, Section 1.7 checks are all marked N/A and no benchmark check IDs appear in the output for that section — consistent with the v2.0.0 benchmark's own skip instruction. When GDM is present on a server, a custom advisory (`SERVER-GDM-01`) is recorded alongside normal evaluation of 1.7.x checks.
 - Firewall checks (Section 3.5) evaluate only the active firewall utility's subsection. All other firewall subsections are marked N/A.
 - The manual review TXT file is a permanent scan artifact, retained alongside the CSV and OS engine report.
-- The OS engine report schema defined in Section 6 is the agreed format for all OS engines. The Rocky Linux Engine must implement the same schema with `"engine": "rocky_linux"` and a corresponding `adhiambo_rocky_os_<timestamp>.json` filename pattern.
+- The OS engine report schema defined in Section 6 is the agreed format for all OS engines. The Rocky Linux Engine must implement the same schema with `"engine": "rocky_linux"` and a corresponding `hardenx_rocky_os_<timestamp>.json` filename pattern.
 
 ---
 

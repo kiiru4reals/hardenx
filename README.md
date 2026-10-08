@@ -1,4 +1,4 @@
-# Adhiambo — Product Paper
+# HardenX — Product Paper
 ### CIS Compliance & Infrastructure Hardening Engine
 **Version:** 0.1 - Internal Working Draft
 **Status:** In Development
@@ -7,9 +7,9 @@
 
 ## 1. Executive Summary
 
-Adhiambo is an automated compliance and infrastructure hardening engine designed to perform deep CIS (Center for Internet Security) benchmark checks across technologies hosted in enterprise cloud environments that fall outside the reach of conventional enterprise scanners.
+HardenX is an automated compliance and infrastructure hardening engine designed to perform deep CIS (Center for Internet Security) benchmark checks across technologies hosted in enterprise cloud environments that fall outside the reach of conventional enterprise scanners.
 
-The solution closes a critical visibility gap affecting internal product teams whose deployments do not conform to standard operating procedures and reside on cloud infrastructure that existing organisational scanners cannot interrogate. Beyond its internal mandate, Adhiambo is positioned as a value-added capability that can be offered to external clients during Vulnerability Assessment and Penetration Testing (VAPT) engagements.
+The solution closes a critical visibility gap affecting internal product teams whose deployments do not conform to standard operating procedures and reside on cloud infrastructure that existing organisational scanners cannot interrogate. Beyond its internal mandate, HardenX is positioned as a value-added capability that can be offered to external clients during Vulnerability Assessment and Penetration Testing (VAPT) engagements.
 
 ---
 
@@ -37,7 +37,7 @@ Leaving these environments unscanned exposes an organisation to:
 
 ## 3. Solution Overview
 
-Adhiambo performs automated, targeted compliance assessments against the **CIS Benchmarks** — a globally recognised set of security configuration standards — across the technology stacks used by internal teams and external client environments.
+HardenX performs automated, targeted compliance assessments against the **CIS Benchmarks** — a globally recognised set of security configuration standards — across the technology stacks used by internal teams and external client environments.
 
 The engine is designed to be:
 
@@ -73,7 +73,7 @@ The engine is designed to be:
 - Real-time continuous monitoring (targeted for a future iteration).
 - Auto-remediation of identified findings.
 - Containerd-only environments — Docker engine checks require the Docker daemon and CLI. Containerd-only hosts are not in scope for the Docker engine.
-- Environments covered by existing enterprise scanner tooling — Adhiambo is a complement, not a replacement.
+- Environments covered by existing enterprise scanner tooling — HardenX is a complement, not a replacement.
 
 ---
 
@@ -81,7 +81,7 @@ The engine is designed to be:
 
 ### 6.1 Assessment Methodology
 
-Adhiambo follows a structured assessment flow:
+HardenX follows a structured assessment flow:
 
 ```
 Deploy script bundle to target host
@@ -126,7 +126,7 @@ Every check also records the specific CIS control ID, a description of the findi
 
 ### 6.3 Technology Coverage — v1
 
-The following five technologies constitute the confirmed scope for Adhiambo v1. Coverage was determined based on the technology audit conducted across internal environments.
+The following five technologies constitute the confirmed scope for HardenX v1. Coverage was determined based on the technology audit conducted across internal environments.
 
 | Technology | Category | CIS Benchmark |
 |------------|----------|---------------|
@@ -144,7 +144,7 @@ The following five technologies constitute the confirmed scope for Adhiambo v1. 
 
 ### 6.4 The Researcher
 
-Before any compliance checks run, Adhiambo's Researcher component interrogates the target host to determine which of the five supported technologies are actively running. This detection step drives which Engine scripts are invoked — engines for technologies that are not running are not invoked.
+Before any compliance checks run, HardenX's Researcher component interrogates the target host to determine which of the five supported technologies are actively running. This detection step drives which Engine scripts are invoked — engines for technologies that are not running are not invoked.
 
 **Active-running detection.** The Researcher only flags a technology as detected if it is actively running at the time of the scan. The presence of installed binaries or packages is not sufficient. This prevents engines from running checks against technologies that are installed but dormant, avoiding false positives and irrelevant findings.
 
@@ -156,45 +156,45 @@ Before any compliance checks run, Adhiambo's Researcher component interrogates t
 
 ### 6.5 Scan Modes
 
-Adhiambo operates in one of two modes depending on how it is invoked.
+HardenX operates in one of two modes depending on how it is invoked.
 
 **Auto-detection mode (default)** runs the Researcher first. The Researcher detects all actively running supported technologies and the orchestrator invokes only the relevant engines in a fixed priority order. This is the standard mode for a complete infrastructure scan and produces the most thorough results.
 
 ```bash
 # Full auto-detected scan at Level 1 (default)
-bash adhiambo.sh
+bash hardenx.sh
 
 # Full auto-detected scan at Level 2
-bash adhiambo.sh --level 2
+bash hardenx.sh --level 2
 ```
 
 **Single-technology mode (`--tech`)** bypasses the Researcher entirely and invokes one specified engine directly. This is useful when the operator already knows which technology they want to assess, wants to re-run a single engine after a full scan, or is scanning a single component in isolation.
 
 ```bash
 # Run only the Docker engine at Level 2 with a target image
-bash adhiambo.sh --tech docker --level 2 --image myrepo/myapp:latest
+bash hardenx.sh --tech docker --level 2 --image myrepo/myapp:latest
 ```
 
 The trade-off with single-technology mode is completeness. The Docker and Kubernetes engines include a class of checks that depend on OS engine output (see Section 6.8). When these engines are run in isolation with `--tech`, no OS engine has run and those checks are marked `SKIPPED`. A full auto-detection scan, which runs the OS engine first, produces a complete report including those findings.
 
 ### 6.6 Invocation Model
 
-Adhiambo v1 is a **Bash-based CLI tool**. Bash was chosen deliberately — the overwhelming majority of technologies in scope run on Linux servers, making Bash a native, dependency-free execution environment that requires no runtime installation on the target system.
+HardenX v1 is a **Bash-based CLI tool**. Bash was chosen deliberately — the overwhelming majority of technologies in scope run on Linux servers, making Bash a native, dependency-free execution environment that requires no runtime installation on the target system.
 
 The v1 workflow is intentionally manual and follows two steps:
 
-**Step 1 — Deploy:** The operator transfers the Adhiambo script bundle to the target server via SSH (or the relevant authentication method available for that environment).
+**Step 1 — Deploy:** The operator transfers the HardenX script bundle to the target server via SSH (or the relevant authentication method available for that environment).
 
 ```bash
-scp -r adhiambo/ user@target-host:/opt/adhiambo/
+scp -r hardenx/ user@target-host:/opt/hardenx/
 ```
 
 **Step 2 — Invoke:** The operator SSH's into the server and manually calls the scan script, specifying the desired scan level and any optional parameters.
 
 ```bash
 ssh user@target-host
-cd /opt/adhiambo
-bash adhiambo.sh --level 2
+cd /opt/hardenx
+bash hardenx.sh --level 2
 ```
 
 Each Engine script also supports a `--help` flag that prints usage information, available options, defaults, and examples, then exits without running any checks. This is intended as a quick field reference for operators.
@@ -209,24 +209,24 @@ This manual invocation model is appropriate for v1 given the nature of the envir
 
 ### 6.7 Scan ID and Finding Correlation
 
-At the start of every scan, Adhiambo generates a UUID that is shared across the Researcher JSON output and every engine report produced in the same run. This Scan ID is printed in the console header at the start of the run and appears in all output files.
+At the start of every scan, HardenX generates a UUID that is shared across the Researcher JSON output and every engine report produced in the same run. This Scan ID is printed in the console header at the start of the run and appears in all output files.
 
 The Scan ID allows all findings from a single scan session to be correlated back to one point-in-time assessment. This is particularly relevant for audit evidence use cases — when a stakeholder or auditor reviews multiple engine reports, the shared Scan ID confirms they originated from the same run and the same host state.
 
 ### 6.8 Image Scanning and SBOM Generation
 
-When a container image is provided via the `--image` flag, Adhiambo performs two additional assessments beyond host and daemon configuration checks.
+When a container image is provided via the `--image` flag, HardenX performs two additional assessments beyond host and daemon configuration checks.
 
-**Vulnerability scanning.** Adhiambo uses Docker Scout to run a CVE scan against the target image and includes the findings in the engine report. This provides a view of known vulnerabilities present in the image's dependencies and base layers, alongside the host-level hardening findings.
+**Vulnerability scanning.** HardenX uses Docker Scout to run a CVE scan against the target image and includes the findings in the engine report. This provides a view of known vulnerabilities present in the image's dependencies and base layers, alongside the host-level hardening findings.
 
-**SBOM generation.** Adhiambo generates a Software Bill of Materials for the target image in either CycloneDX (default) or SPDX format, selectable via the `--sbom-format` flag. The SBOM file path is recorded in the engine report.
+**SBOM generation.** HardenX generates a Software Bill of Materials for the target image in either CycloneDX (default) or SPDX format, selectable via the `--sbom-format` flag. The SBOM file path is recorded in the engine report.
 
 ```bash
 # Level 2 scan with image, CycloneDX SBOM (default)
-bash adhiambo.sh --tech docker --level 2 --image myrepo/myapp:latest
+bash hardenx.sh --tech docker --level 2 --image myrepo/myapp:latest
 
 # Level 1 scan with image, SPDX SBOM
-bash adhiambo.sh --tech docker --image myrepo/myapp:latest --sbom-format spdx
+bash hardenx.sh --tech docker --image myrepo/myapp:latest --sbom-format spdx
 ```
 
 Docker Scout must be installed on the target host for image scanning and SBOM generation to run. If it is not present, image-level checks are marked `SKIPPED` and a warning is printed to the console. Host and daemon checks are not affected.
@@ -235,7 +235,7 @@ Docker Scout must be installed on the target host for image scanning and SBOM ge
 
 The Docker and Kubernetes engines include a class of checks — referred to as `OS_DEPENDENT` checks — that operate at the host OS level: auditd rules for container-related files, file and directory permission checks, kernel parameters, and systemd service configuration. These checks differ between Ubuntu and Rocky Linux and are owned entirely by the OS engines.
 
-Rather than duplicating this logic across engines, Adhiambo's Docker and Kubernetes engines read the OS engine's output report for these checks and reference the relevant findings directly. Each OS-dependent finding in the Docker or Kubernetes report cites the source OS engine check ID so results are fully traceable.
+Rather than duplicating this logic across engines, HardenX's Docker and Kubernetes engines read the OS engine's output report for these checks and reference the relevant findings directly. Each OS-dependent finding in the Docker or Kubernetes report cites the source OS engine check ID so results are fully traceable.
 
 In practice, this means:
 
@@ -244,7 +244,7 @@ In practice, this means:
 
 ### 6.10 Failure Resilience
 
-Adhiambo is designed to return as much output as possible even when things go wrong during a scan.
+HardenX is designed to return as much output as possible even when things go wrong during a scan.
 
 **Engine failures do not abort the scan.** If one engine exits with an error, the remaining engines continue running. The failed engine is flagged in the scan footer and the orchestrator exits with a non-zero code, but findings from all other engines are complete and usable.
 
@@ -254,17 +254,17 @@ Adhiambo is designed to return as much output as possible even when things go wr
 
 ### 6.11 Credential Safety Model
 
-Adhiambo handles credentials with the following guarantees:
+HardenX handles credentials with the following guarantees:
 
-- **No credential storage.** Credentials are never written to disk or persisted within Adhiambo. They are entered interactively at invocation time and used in-memory only.
+- **No credential storage.** Credentials are never written to disk or persisted within HardenX. They are entered interactively at invocation time and used in-memory only.
 - **Existing session detection.** Before prompting for new credentials, the Docker engine checks for any existing authenticated registry sessions on the host and surfaces them to the operator, showing the registry hostname and a masked username. The operator can retain, replace, or supplement existing sessions before the scan begins.
-- **Guaranteed logout.** All registry sessions opened during a scan are fully logged out at the end of every run — whether the scan completed successfully, encountered an error, or was interrupted mid-run. The host is returned to an unauthenticated state after every Adhiambo invocation.
+- **Guaranteed logout.** All registry sessions opened during a scan are fully logged out at the end of every run — whether the scan completed successfully, encountered an error, or was interrupted mid-run. The host is returned to an unauthenticated state after every HardenX invocation.
 
 For VAPT engagements, the full credential lifecycle — provisioning, handling during the scan, and teardown — is governed by the Rules of Engagement template (see Section 7.2).
 
 ### 6.12 Access & Connectivity Model
 
-Since Adhiambo is deployed directly onto the target server, it does not require inbound network access or a dedicated scanning user on a separate host. The operator needs only:
+Since HardenX is deployed directly onto the target server, it does not require inbound network access or a dedicated scanning user on a separate host. The operator needs only:
 
 | Requirement | Detail |
 |-------------|--------|
@@ -317,17 +317,17 @@ The console output has four layers:
   ──────────────────
   TOTAL            32
 
-  Report saved to: adhiambo_docker_2026-04-10T1143.csv
+  Report saved to: hardenx_docker_2026-04-10T1143.csv
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 ### 6.15 Tool Architecture
 
-Adhiambo is structured as three discrete components that execute in sequence. This separation of concerns keeps each component focused, testable, and independently maintainable.
+HardenX is structured as three discrete components that execute in sequence. This separation of concerns keeps each component focused, testable, and independently maintainable.
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  adhiambo.sh (entrypoint)            │
+│                  hardenx.sh (entrypoint)            │
 └──────────────┬──────────────────────────────────────┘
                │
                ▼
@@ -364,11 +364,11 @@ Adhiambo is structured as three discrete components that execute in sequence. Th
 
 ## 7. v1 Deliverables
 
-The following defines what Adhiambo v1 will produce. These deliverables collectively constitute the definition of done for v1.
+The following defines what HardenX v1 will produce. These deliverables collectively constitute the definition of done for v1.
 
 ### 7.1 Tool Deliverables
 
-**1. Adhiambo Bash Script Bundle**
+**1. HardenX Bash Script Bundle**
 
 A deployable set of Bash scripts structured around the three-component architecture (Researcher, Engine, Reporter). The bundle is self-contained and designed to be dropped onto a target Linux server via SSH and invoked manually.
 
@@ -402,7 +402,7 @@ Every finding across all three formats contains the same four fields:
 
 **4. SBOM Output**
 
-Where Docker Scout is available and an image is provided, Adhiambo produces a Software Bill of Materials for the target image in CycloneDX (default) or SPDX format. The SBOM file path is recorded in the engine report.
+Where Docker Scout is available and an image is provided, HardenX produces a Software Bill of Materials for the target image in CycloneDX (default) or SPDX format. The SBOM file path is recorded in the engine report.
 
 **5. Researcher Detection Report**
 
@@ -416,8 +416,8 @@ Each Engine script streams live output to the console as checks execute. The con
 
 | Deliverable | Description |
 |-------------|-------------|
-| **Access & Permissions Framework** | A documented process for safely provisioning the access needed to deploy and run Adhiambo on a target server, including a teardown checklist for post-assessment cleanup. |
-| **VAPT Rules of Engagement (RoE) Template** | A template formalising how Adhiambo is scoped and deployed during external VAPT engagements, covering client consent, credential handling, and deliverable expectations. |
+| **Access & Permissions Framework** | A documented process for safely provisioning the access needed to deploy and run HardenX on a target server, including a teardown checklist for post-assessment cleanup. |
+| **VAPT Rules of Engagement (RoE) Template** | A template formalising how HardenX is scoped and deployed during external VAPT engagements, covering client consent, credential handling, and deliverable expectations. |
 
 ### 7.3 v1 Success Criteria
 
@@ -441,7 +441,7 @@ v1 is considered complete when:
 
 ### 8.1 Internal — Product Team Compliance Audits
 
-Engineering and security teams can invoke Adhiambo against a team's environment to get a point-in-time compliance posture assessment. The output supports:
+Engineering and security teams can invoke HardenX against a team's environment to get a point-in-time compliance posture assessment. The output supports:
 
 - Pre-production hardening before a product goes live.
 - Periodic compliance reviews as part of a security programme.
@@ -449,11 +449,11 @@ Engineering and security teams can invoke Adhiambo against a team's environment 
 
 ### 8.2 Internal — Leadership Visibility
 
-Leadership can use aggregated Adhiambo outputs to understand the compliance posture across all teams, track improvement over time, and make informed decisions about where to direct remediation effort and investment.
+Leadership can use aggregated HardenX outputs to understand the compliance posture across all teams, track improvement over time, and make informed decisions about where to direct remediation effort and investment.
 
 ### 8.3 External — VAPT Value Addition
 
-During client VAPT engagements, Adhiambo can be offered as an additional deliverable. Rather than returning only penetration test findings, the team can also provide:
+During client VAPT engagements, HardenX can be offered as an additional deliverable. Rather than returning only penetration test findings, the team can also provide:
 
 - A CIS Benchmark compliance report covering the client's infrastructure.
 - Hardening recommendations that go beyond identified vulnerabilities.
@@ -463,7 +463,7 @@ This positions the organisation as a comprehensive security partner rather than 
 
 ### 8.4 Container Image Security Review
 
-Where a target Docker environment is in scope, Adhiambo can assess a specific container image for known vulnerabilities and produce a Software Bill of Materials. This use case is distinct from infrastructure hardening — it addresses the security posture of what is running inside the containers, not just how the host and daemon are configured.
+Where a target Docker environment is in scope, HardenX can assess a specific container image for known vulnerabilities and produce a Software Bill of Materials. This use case is distinct from infrastructure hardening — it addresses the security posture of what is running inside the containers, not just how the host and daemon are configured.
 
 This is relevant both internally (pre-production image review before a product goes live) and for VAPT clients who want image-level assurance alongside host-level findings.
 
@@ -475,7 +475,7 @@ This is relevant both internally (pre-production image review before a product g
 - Immediate, actionable visibility into compliance gaps that were previously invisible.
 - Self-service capability reduces dependency on centralised security reviews.
 - Clear remediation guidance mapped to industry-standard benchmarks.
-- Auto-scoping via the Researcher means no manual configuration is needed to get a complete scan — Adhiambo determines what to assess automatically.
+- Auto-scoping via the Researcher means no manual configuration is needed to get a complete scan — HardenX determines what to assess automatically.
 
 ### For Leadership
 - Quantified, evidence-based view of the organisation's security posture across internal products.
@@ -504,13 +504,13 @@ This is relevant both internally (pre-production image review before a product g
 | **Infrastructure Hardening** | The process of reducing a system's attack surface by applying security configurations and removing unnecessary functionality. |
 | **SKIPPED** | A check result status indicating the check was not run. The reason is recorded in the Remediation field (e.g. a required tool is not installed, or a required parameter was not provided). |
 | **MANUAL_REVIEW** | A check result status indicating the check cannot be fully automated. The relevant command output is captured and provided to the operator for manual assessment. |
-| **Researcher** | The Adhiambo component that interrogates the target host before any compliance checks run, determines which supported technologies are actively running, and produces the JSON output that scopes engine invocation. |
+| **Researcher** | The HardenX component that interrogates the target host before any compliance checks run, determines which supported technologies are actively running, and produces the JSON output that scopes engine invocation. |
 | **Engine** | A technology-specific Bash script that implements the CIS Benchmark checks for one supported technology. Each engine is self-contained and runs at the level specified by the operator. |
-| **Scan ID** | A UUID generated at the start of every Adhiambo run, shared across the Researcher JSON and all engine reports from the same invocation. Used to correlate all findings from a single scan session. |
+| **Scan ID** | A UUID generated at the start of every HardenX run, shared across the Researcher JSON and all engine reports from the same invocation. Used to correlate all findings from a single scan session. |
 | **SBOM** | Software Bill of Materials — a structured inventory of the components, libraries, and dependencies present in a software artefact such as a container image. |
-| **Docker Scout** | A Docker tool used by Adhiambo for container image vulnerability scanning and SBOM generation. Must be installed separately on the target host. |
+| **Docker Scout** | A Docker tool used by HardenX for container image vulnerability scanning and SBOM generation. Must be installed separately on the target host. |
 | **OS-Dependent Check** | A check in the Docker or Kubernetes engine that operates at the host OS level and depends on output from the OS engine (Ubuntu or Rocky Linux). These checks are skipped when no OS engine report is present. |
 
 ---
 
-*This document is a living product paper and will be updated as Adhiambo progresses through development. All feedback should be directed to the issues tab.*
+*This document is a living product paper and will be updated as HardenX progresses through development. All feedback should be directed to the issues tab.*

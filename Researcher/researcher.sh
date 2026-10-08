@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Adhiambo — Researcher
+# HardenX — Researcher
 # Detects active technologies on the target host and writes a structured
-# JSON output file for adhiambo.sh to consume.
+# JSON output file for hardenx.sh to consume.
 #
 # Usage: bash researcher.sh [OPTIONS]
 # See --help for full usage information.
@@ -15,7 +15,7 @@ set -euo pipefail
 # =============================================================================
 
 OUTPUT_DIR="."
-ADHIAMBO_VERSION="0.1"
+HARDENX_VERSION="0.1"
 
 # =============================================================================
 # HELP MENU
@@ -23,7 +23,7 @@ ADHIAMBO_VERSION="0.1"
 
 show_help() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo " Adhiambo — Researcher"
+  echo " HardenX — Researcher"
   echo " Detects active technologies on the target host"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
@@ -47,12 +47,12 @@ show_help() {
   echo "    bash researcher.sh"
   echo ""
   echo "  Run detection and write output to a specific directory:"
-  echo "    bash researcher.sh --output-dir /opt/adhiambo/output"
+  echo "    bash researcher.sh --output-dir /opt/hardenx/output"
   echo ""
   echo "NOTES"
   echo "  - sudo or root access is required for accurate detection of"
   echo "    system-level services."
-  echo "  - Output file: adhiambo_researcher_<timestamp>.json"
+  echo "  - Output file: hardenx_researcher_<timestamp>.json"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
@@ -138,9 +138,9 @@ json_field() {
 # SCAN SETUP
 # =============================================================================
 
-# Use the scan ID passed in by adhiambo.sh if available, otherwise generate one.
+# Use the scan ID passed in by hardenx.sh if available, otherwise generate one.
 # This ensures the Researcher and all engines share the same scan ID when
-# invoked via adhiambo.sh. When invoked directly, the Researcher generates its own.
+# invoked via hardenx.sh. When invoked directly, the Researcher generates its own.
 if [[ -n "${EXTERNAL_SCAN_ID:-}" ]]; then
   SCAN_ID="$EXTERNAL_SCAN_ID"
 else
@@ -148,7 +148,7 @@ else
 fi
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 HOSTNAME=$(hostname)
-OUTPUT_FILE="$OUTPUT_DIR/adhiambo_researcher_$(date -u +"%Y-%m-%dT%H%M").json"
+OUTPUT_FILE="$OUTPUT_DIR/hardenx_researcher_$(date -u +"%Y-%m-%dT%H%M").json"
 
 # Arrays to collect results
 declare -A TECH_DETECTED
@@ -163,7 +163,7 @@ ENGINES_TO_INVOKE=()
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Adhiambo — Researcher"
+echo " HardenX — Researcher"
 echo " Detecting active technologies on this host..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -425,7 +425,7 @@ engines_json+="]"
 
 cat > "$OUTPUT_FILE" <<EOF
 {
-  "adhiambo_version": "$ADHIAMBO_VERSION",
+  "hardenx_version": "$HARDENX_VERSION",
   "scan_id": "$SCAN_ID",
   "timestamp": "$TIMESTAMP",
   "hostname": "$(json_escape "$HOSTNAME")",
@@ -481,7 +481,7 @@ if [[ ${#ORDERED_ENGINES[@]} -eq 0 ]]; then
   echo "  Technologies detected   : none"
   echo ""
   echo "  No supported technologies were found running on this host."
-  echo "  No engines will be invoked. Adhiambo will exit."
+  echo "  No engines will be invoked. HardenX will exit."
 else
   echo "  Technologies detected   : $(IFS=', '; echo "${ORDERED_ENGINES[*]}")"
   echo "  Engines to be invoked   : $(IFS=', '; echo "${ORDERED_ENGINES[*]}")"
@@ -496,7 +496,7 @@ echo ""
 # EXIT
 # =============================================================================
 
-# If no engines to invoke, exit with code 3 so adhiambo.sh can handle cleanly
+# If no engines to invoke, exit with code 3 so hardenx.sh can handle cleanly
 if [[ ${#ORDERED_ENGINES[@]} -eq 0 ]]; then
   exit 3
 fi

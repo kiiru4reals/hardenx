@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adhiambo Ubuntu Engine — Pre-flight Checks
+# HardenX Ubuntu Engine — Pre-flight Checks
 # Phase 1: OS verification  Phase 2: Privilege  Phase 3: Desktop  Phase 4: Host profile
 
 # ─── Phase 1: OS Version Verification ────────────────────────────────────────
@@ -37,7 +37,7 @@ preflight_os() {
 # ─── Phase 2: Privilege Check ─────────────────────────────────────────────────
 preflight_privilege() {
     if [[ "$EUID" -ne 0 ]]; then
-        print_warn "Adhiambo is not running as root."
+        print_warn "HardenX is not running as root."
         print_warn "Checks requiring elevated privileges will be marked"
         print_warn "SKIPPED: Insufficient privileges rather than FAIL."
         print_warn "For a complete scan, re-run with sudo or as root."

@@ -1,4 +1,4 @@
-# Adhiambo — Kubernetes Engine Design Document
+# HardenX — Kubernetes Engine Design Document
 ### Component: `engine/kubernetes.sh` + `reporter_kubernetes.sh`
 **Benchmark Reference:** CIS Kubernetes Benchmark v1.9.0 (via kube-bench)
 **Kubernetes Support:** v1.24 and above
@@ -10,9 +10,9 @@
 
 ## 1. Purpose
 
-This document defines the design for the Adhiambo Kubernetes Engine (`engine/kubernetes.sh`) and its accompanying temporary reporting helper (`reporter_kubernetes.sh`). Rather than implementing individual CIS checks natively, the Kubernetes Engine delegates all benchmark execution to **kube-bench** — the widely-used CIS Kubernetes Benchmark tool maintained by Aqua Security — and is responsible for invoking it correctly, parsing its JSON output, mapping results into the Adhiambo status model, calculating compliance scores, and writing findings in the standard four-column format that the Reporter expects.
+This document defines the design for the HardenX Kubernetes Engine (`engine/kubernetes.sh`) and its accompanying temporary reporting helper (`reporter_kubernetes.sh`). Rather than implementing individual CIS checks natively, the Kubernetes Engine delegates all benchmark execution to **kube-bench** — the widely-used CIS Kubernetes Benchmark tool maintained by Aqua Security — and is responsible for invoking it correctly, parsing its JSON output, mapping results into the HardenX status model, calculating compliance scores, and writing findings in the standard four-column format that the Reporter expects.
 
-This design keeps the engine lean and leverages a well-maintained, community-validated check library. The engine's value is in the translation layer: structured, consistent output in the Adhiambo format, regardless of what is upstream.
+This design keeps the engine lean and leverages a well-maintained, community-validated check library. The engine's value is in the translation layer: structured, consistent output in the HardenX format, regardless of what is upstream.
 
 The engine supports two invocation modes for kube-bench, selected automatically at pre-flight:
 
@@ -21,33 +21,33 @@ The engine supports two invocation modes for kube-bench, selected automatically 
 
 The mode selection is fully automatic. The operator does not need to specify which mode to use.
 
-The reporting helper is a stopgap component produced ahead of the main Adhiambo Reporter (`reporter.sh`) and will be retired once the main Reporter is ready. It mirrors the intended Reporter interface to ensure a clean handover.
+The reporting helper is a stopgap component produced ahead of the main HardenX Reporter (`reporter.sh`) and will be retired once the main Reporter is ready. It mirrors the intended Reporter interface to ensure a clean handover.
 
 ---
 
 ## 2. Role in the Architecture
 
 ```
-adhiambo.sh (entrypoint & orchestrator)
+hardenx.sh (entrypoint & orchestrator)
         │
         ▼
 engine/kubernetes.sh
         │
         ├── [Binary Mode — kube-bench found in PATH]
         │     └── kube-bench run --targets master,etcd,controlplane,policies --json
-        │               └── /tmp/adhiambo_kubebench_<timestamp>.json
+        │               └── /tmp/hardenx_kubebench_<timestamp>.json
         │
         ├── [Job Mode — kube-bench not in PATH, kubectl available]
         │     ├── kubectl apply → kube-bench Job on control plane node
         │     ├── kubectl wait  → Job completes (or timeout)
-        │     ├── kubectl logs  → JSON streamed to /tmp/adhiambo_kubebench_<timestamp>.json
+        │     ├── kubectl logs  → JSON streamed to /tmp/hardenx_kubebench_<timestamp>.json
         │     └── kubectl delete → Job cleaned up
         │
-        ├── Parse JSON → map to Adhiambo status model → calculate scores
+        ├── Parse JSON → map to HardenX status model → calculate scores
         │
         └── reporter_kubernetes.sh
                   │
-                  └── adhiambo_kubernetes_<timestamp>.csv
+                  └── hardenx_kubernetes_<timestamp>.csv
 ```
 
 kube-bench is the source of truth for all check results. The engine does not re-implement any CIS logic. Both modes produce identical JSON output — everything from the parsing stage onward is the same regardless of which mode ran. If kube-bench cannot be run via either mode, the engine exits without producing a report.
@@ -56,7 +56,7 @@ kube-bench is the source of truth for all check results. The engine does not re-
 
 ## 3. Invocation
 
-The Kubernetes Engine is invoked from the main `adhiambo.sh` entrypoint or directly by the operator. The following flags are supported:
+The Kubernetes Engine is invoked from the main `hardenx.sh` entrypoint or directly by the operator. The following flags are supported:
 
 ```bash
 bash engine/kubernetes.sh [OPTIONS]
@@ -92,7 +92,7 @@ bash engine/kubernetes.sh --help
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Adhiambo — Kubernetes CIS Benchmark Engine
+ HardenX — Kubernetes CIS Benchmark Engine
  Benchmark : CIS Kubernetes Benchmark v1.9.0
  Scope     : Control Plane (v1)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -119,7 +119,7 @@ OPTIONS
       Kubernetes namespace in which to deploy the kube-bench Job.
       Applies to Job Mode only. Ignored when kube-bench binary is found.
       Defaults to kube-system.
-      Example: --namespace adhiambo
+      Example: --namespace hardenx
 
   --output-dir <path>
       Directory to write all output files.
@@ -140,13 +140,13 @@ EXAMPLES
     bash engine/kubernetes.sh --level 2 --kubeconfig /etc/kubernetes/admin.conf
 
   Run a Level 1 scan in Job Mode using a custom namespace:
-    bash engine/kubernetes.sh --namespace adhiambo
+    bash engine/kubernetes.sh --namespace hardenx
 
   Run Job Mode against an internal registry mirror (air-gapped):
     bash engine/kubernetes.sh --kube-bench-image registry.acme.internal/kube-bench:v0.8.0
 
   Run a Level 1 scan and write output to a specific directory:
-    bash engine/kubernetes.sh --output-dir /opt/adhiambo/output
+    bash engine/kubernetes.sh --output-dir /opt/hardenx/output
 
 NOTES
   - sudo or root access is required for control plane file and process checks
@@ -155,7 +155,7 @@ NOTES
     If not found and kubectl is available, Job Mode is used automatically.
   - Job Mode requires permission to create, get, and delete Jobs and Pods
     in the target namespace (default: kube-system).
-  - Report output: adhiambo_kubernetes_<timestamp>.csv
+  - Report output: hardenx_kubernetes_<timestamp>.csv
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -189,7 +189,7 @@ pgrep -x kube-apiserver > /dev/null 2>&1
         No checks were run. No report has been generated.
 ```
 
-This mirrors the Researcher's detection logic (see `README-researcher.md`, Section 5.2). When invoked via `adhiambo.sh` in auto-detection mode, the Researcher has already confirmed `kube-apiserver` is present before invoking this engine — the check here provides a safety net for direct invocations.
+This mirrors the Researcher's detection logic (see `README-researcher.md`, Section 5.2). When invoked via `hardenx.sh` in auto-detection mode, the Researcher has already confirmed `kube-apiserver` is present before invoking this engine — the check here provides a safety net for direct invocations.
 
 ### 4.2 kube-bench Availability & Mode Selection
 
@@ -294,7 +294,7 @@ The engine does not retry the connectivity test. If the API is unreachable at pr
 
 ## 5. kube-bench Invocation
 
-Once pre-flight completes, the engine invokes kube-bench using whichever mode was selected in Step 4.2. Both modes produce an identical JSON file at `/tmp/adhiambo_kubebench_<timestamp>.json`. Everything from Section 6 onward is the same regardless of mode.
+Once pre-flight completes, the engine invokes kube-bench using whichever mode was selected in Step 4.2. Both modes produce an identical JSON file at `/tmp/hardenx_kubebench_<timestamp>.json`. Everything from Section 6 onward is the same regardless of mode.
 
 ### 5.1 Targets
 
@@ -332,7 +332,7 @@ When the kube-bench binary is found in `PATH`, the engine invokes it directly:
 kube-bench run \
   --targets master,etcd,controlplane,policies \
   --json \
-  > /tmp/adhiambo_kubebench_<timestamp>.json
+  > /tmp/hardenx_kubebench_<timestamp>.json
 ```
 
 The raw JSON output is written to `/tmp` and retained as a permanent scan artifact.
@@ -363,10 +363,10 @@ The engine generates and applies the following Job manifest at runtime. The imag
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: adhiambo-kube-bench
+  name: hardenx-kube-bench
   namespace: <namespace>          # --namespace flag, defaults to kube-system
   labels:
-    app: adhiambo
+    app: hardenx
     scan-id: <scan_id>
 spec:
   template:
@@ -459,7 +459,7 @@ If the kubeconfig lacks these permissions, the engine prints an error and exits 
 After applying the Job manifest, the engine waits for the Job to reach a terminal state:
 
 ```bash
-kubectl wait job/adhiambo-kube-bench \
+kubectl wait job/hardenx-kube-bench \
   --namespace <namespace> \
   --for=condition=complete \
   --timeout=120s \
@@ -471,10 +471,10 @@ The timeout is **120 seconds**. This is sufficient for kube-bench to complete in
 Once the Job completes successfully, the engine retrieves the results from the pod logs:
 
 ```bash
-kubectl logs job/adhiambo-kube-bench \
+kubectl logs job/hardenx-kube-bench \
   --namespace <namespace> \
   --kubeconfig <path> \
-  > /tmp/adhiambo_kubebench_<timestamp>.json
+  > /tmp/hardenx_kubebench_<timestamp>.json
 ```
 
 The JSON written to `/tmp` is identical in structure to what Binary Mode produces. From this point, result parsing (Section 6) proceeds identically.
@@ -482,10 +482,10 @@ The JSON written to `/tmp` is identical in structure to what Binary Mode produce
 Progress is printed to the console while waiting:
 
 ```
-[INFO] kube-bench Job deployed: adhiambo-kube-bench (namespace: kube-system)
+[INFO] kube-bench Job deployed: hardenx-kube-bench (namespace: kube-system)
 [INFO] Waiting for Job to complete (timeout: 120s)...
 [INFO] Job complete. Retrieving results...
-[INFO] Results written to: /tmp/adhiambo_kubebench_2026-04-10T1143.json
+[INFO] Results written to: /tmp/hardenx_kubebench_2026-04-10T1143.json
 ```
 
 #### 5.4.4 Job Failure
@@ -495,7 +495,7 @@ If the Job fails (pod exits non-zero) or times out, the engine prints an error a
 ```
 [ERROR] kube-bench Job did not complete successfully.
         Status : <Failed | Timed out after 120s>
-        Job    : adhiambo-kube-bench
+        Job    : hardenx-kube-bench
         Namespace: <namespace>
         Scan ID: <scan_id>
 
@@ -534,7 +534,7 @@ Before downloading, the engine prompts the operator for explicit confirmation. T
 
 ```
 [INSTALL] kube-bench was not found on this host.
-          Adhiambo can install it automatically to complete this scan,
+          HardenX can install it automatically to complete this scan,
           then remove it once the scan is finished.
 
           Package : kube-bench v0.8.0
@@ -620,7 +620,7 @@ Once installed, the engine runs kube-bench identically to Binary Mode:
 kube-bench run \
   --targets master,etcd,controlplane,policies \
   --json \
-  > /tmp/adhiambo_kubebench_<timestamp>.json
+  > /tmp/hardenx_kubebench_<timestamp>.json
 ```
 
 From this point, result parsing (Section 6) proceeds identically to Binary Mode.
@@ -668,7 +668,7 @@ The actual on-disk format is:
 
 This is not a valid single JSON document. The parser uses `JSONDecoder.raw_decode()` to walk the file and yield each object in sequence.
 
-The fields used by the Adhiambo parser are:
+The fields used by the HardenX parser are:
 
 | Field | Location | Used for |
 |---|---|---|
@@ -685,22 +685,22 @@ Controls entries where `id` is empty or absent (e.g. summary nodes appended by k
 
 ### 6.2 Status Mapping
 
-kube-bench uses four status values. These are mapped to the five Adhiambo status values as follows:
+kube-bench uses four status values. These are mapped to the five HardenX status values as follows:
 
-| kube-bench status | Adhiambo status | Rationale |
+| kube-bench status | HardenX status | Rationale |
 |---|---|---|
 | `PASS` | `PASS` | Check passed. Configuration meets the CIS control. |
 | `FAIL` | `FAIL` | Check failed. Configuration does not meet the CIS control. |
 | `WARN` | `MANUAL_REVIEW` | kube-bench cannot fully automate this check. The remediation text from kube-bench is captured and written to the Remediation column for operator review. |
 | `INFO` | `MANUAL_REVIEW` | Informational — requires operator assessment. Treated the same as `WARN`. |
 
-No kube-bench result maps to Adhiambo's `N/A` or `SKIPPED` statuses at the result level. `SKIPPED` is used only by the engine itself for checks that could not be evaluated at all (e.g. Section 5 checks when no kubeconfig is available).
+No kube-bench result maps to HardenX's `N/A` or `SKIPPED` statuses at the result level. `SKIPPED` is used only by the engine itself for checks that could not be evaluated at all (e.g. Section 5 checks when no kubeconfig is available).
 
 ### 6.3 Remediation Column Population
 
 The Remediation column in the CSV is populated as follows per status:
 
-| Adhiambo status | Remediation column content |
+| HardenX status | Remediation column content |
 |---|---|
 | `PASS` | Empty |
 | `FAIL` | Remediation text from kube-bench `remediation` field |
@@ -808,14 +808,14 @@ The engine passes findings to the reporting helper as a structured array in the 
 The helper produces a single CSV file:
 
 ```
-adhiambo_kubernetes_<timestamp>.csv
+hardenx_kubernetes_<timestamp>.csv
 ```
 
 The file is written to the directory specified by `--output-dir`.
 
 ### 9.4 CSV Fields
 
-The CSV follows the four-column schema defined across all Adhiambo engines:
+The CSV follows the four-column schema defined across all HardenX engines:
 
 | Column | Description |
 |---|---|
@@ -860,7 +860,7 @@ Note: The console output is derived from the parsed kube-bench JSON, not streame
 
 ### 10.3 Per-Check Output
 
-Each check prints a single line as it is processed. The format matches all other Adhiambo engines:
+Each check prints a single line as it is processed. The format matches all other HardenX engines:
 
 ```
 [<STATUS>]  <Check ID>  <Check Description>
@@ -911,7 +911,7 @@ If a section has no `MANUAL_REVIEW` results, the block is omitted entirely for t
 After all sections have been printed, the engine prints the path to the raw kube-bench JSON for operators who need to inspect the unprocessed output:
 
 ```
-[INFO] Raw kube-bench output retained at: /tmp/adhiambo_kubebench_2026-04-10T1143.json
+[INFO] Raw kube-bench output retained at: /tmp/hardenx_kubebench_2026-04-10T1143.json
 ```
 
 ### 10.6 Scan Summary Block
@@ -940,7 +940,7 @@ After all sections and the raw output reference, the summary block is printed. I
   ─────────────────────────────────────────────────
   Overall Score                           : 79.2%
 
-  Report saved to: adhiambo_kubernetes_2026-04-10T1143.csv
+  Report saved to: hardenx_kubernetes_2026-04-10T1143.csv
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -954,12 +954,12 @@ The summary block appears **only in the console**. It is not written to the CSV,
 
 The engine has no sessions to revoke and no remote resources to clean up. Teardown is minimal:
 
-- The raw kube-bench JSON at `/tmp/adhiambo_kubebench_<timestamp>.json` is **retained** as a permanent scan artifact alongside the CSV report.
+- The raw kube-bench JSON at `/tmp/hardenx_kubebench_<timestamp>.json` is **retained** as a permanent scan artifact alongside the CSV report.
 - No temporary files are deleted.
 
 ```
 [TEARDOWN] Scan complete. No sessions to clear.
-           Raw kube-bench output: /tmp/adhiambo_kubebench_2026-04-10T1143.json
+           Raw kube-bench output: /tmp/hardenx_kubebench_2026-04-10T1143.json
 ```
 
 ### 11.2 Job Mode
@@ -969,7 +969,7 @@ In Job Mode, teardown must delete the kube-bench Job from the cluster regardless
 The teardown sequence is:
 
 ```bash
-kubectl delete job adhiambo-kube-bench \
+kubectl delete job hardenx-kube-bench \
   --namespace <namespace> \
   --kubeconfig <path> \
   --ignore-not-found
@@ -981,8 +981,8 @@ The SIGINT/SIGTERM trap registered at startup includes this deletion. If the ope
 
 ```
 [TEARDOWN] Deleting kube-bench Job from cluster...
-           ✓ Deleted: adhiambo-kube-bench (namespace: kube-system)
-[TEARDOWN] Raw kube-bench output: /tmp/adhiambo_kubebench_2026-04-10T1143.json
+           ✓ Deleted: hardenx-kube-bench (namespace: kube-system)
+[TEARDOWN] Raw kube-bench output: /tmp/hardenx_kubebench_2026-04-10T1143.json
 [TEARDOWN] Done.
 ```
 
@@ -991,7 +991,7 @@ If the Job deletion fails (e.g. the cluster API became unreachable during teardo
 ```
 [WARN] Failed to delete kube-bench Job automatically.
        To clean up manually, run:
-         kubectl delete job adhiambo-kube-bench -n kube-system
+         kubectl delete job hardenx-kube-bench -n kube-system
 ```
 
 ### 11.3 Install Mode
@@ -1000,7 +1000,7 @@ Install Mode teardown combines the Binary Mode teardown with a package uninstall
 
 ```
 [TEARDOWN] Scan complete.
-           Raw kube-bench output: /tmp/adhiambo_kubebench_2026-04-10T1143.json
+           Raw kube-bench output: /tmp/hardenx_kubebench_2026-04-10T1143.json
 [TEARDOWN] Uninstalling kube-bench...
            ✓ kube-bench removed.
 [TEARDOWN] Done.
@@ -1020,7 +1020,7 @@ If the uninstall fails, a warning is printed with the manual removal command. Th
 ## 12. Component Flow
 
 ```
-adhiambo.sh --tech kubernetes --level <1|2> [--kubeconfig <path>] [--namespace <n>] [--output-dir <path>]
+hardenx.sh --tech kubernetes --level <1|2> [--kubeconfig <path>] [--namespace <n>] [--output-dir <path>]
         │
         ▼
 engine/kubernetes.sh
@@ -1045,14 +1045,14 @@ engine/kubernetes.sh
         │
         ├── [kube-bench Execution — Binary Mode]
         │     ├── kube-bench run --targets master,etcd,controlplane,policies --json
-        │     └── Write raw JSON -> /tmp/adhiambo_kubebench_<timestamp>.json
+        │     └── Write raw JSON -> /tmp/hardenx_kubebench_<timestamp>.json
         │
         ├── [kube-bench Execution — Job Mode]
         │     ├── Generate Job manifest (Section 5.4.1)
         │     ├── kubectl apply → deploy Job to <namespace> on control plane node
         │     ├── kubectl wait  → Job completes (timeout: 120s)
         │     │     └── Timeout or failure -> exit with message; Job deleted in teardown
-        │     ├── kubectl logs  → stream JSON to /tmp/adhiambo_kubebench_<timestamp>.json
+        │     ├── kubectl logs  → stream JSON to /tmp/hardenx_kubebench_<timestamp>.json
         │     └── kubectl delete → remove Job from cluster
         │
         ├── [kube-bench Execution — Install Mode]
@@ -1064,12 +1064,12 @@ engine/kubernetes.sh
         │     │     └── Download fails -> exit with message (no install attempted)
         │     ├── Install package (apt / dnf)
         │     ├── kube-bench run --targets master,etcd,controlplane,policies --json
-        │     └── Write raw JSON -> /tmp/adhiambo_kubebench_<timestamp>.json
+        │     └── Write raw JSON -> /tmp/hardenx_kubebench_<timestamp>.json
         │
         ├── [Result Parsing — identical for all modes]
-        │     ├── Parse /tmp/adhiambo_kubebench_<timestamp>.json
+        │     ├── Parse /tmp/hardenx_kubebench_<timestamp>.json
         │     ├── Apply level filter (Level 1: scored only; Level 2: all)
-        │     ├── Map kube-bench statuses to Adhiambo statuses (Section 6.2)
+        │     ├── Map kube-bench statuses to HardenX statuses (Section 6.2)
         │     └── Apply OS_DEPENDENT check overrides
         │
         ├── [Console Output — per section]
@@ -1084,7 +1084,7 @@ engine/kubernetes.sh
         │     └── Print status counts + compliance scores + raw JSON path
         │
         ├── [Reporter]
-        │     └── reporter_kubernetes.sh -> adhiambo_kubernetes_<timestamp>.csv
+        │     └── reporter_kubernetes.sh -> hardenx_kubernetes_<timestamp>.csv
         │
         └── [Teardown]
               ├── Binary Mode  : print completion message
@@ -1120,7 +1120,7 @@ engine/kubernetes.sh
 | 3 | **Replace OS engine maintenance placeholders with live report lookups once Ubuntu and Rocky Linux engine rewrites are complete.** All `OS_DEPENDENT` checks currently marked `SKIPPED: OS engine under maintenance` must be revisited at that point. | Engineering |
 | 4 | Confirm whether worker node checks should be added as a v1.1 scope extension or deferred to v2. Worker node detection logic is already present in the Researcher. | Product |
 | 5 | Confirm Job Mode timeout value. 120 seconds is the current default. Environments with slow image pulls or constrained nodes may require a longer timeout. | Engineering |
-| 6 | Confirm the RBAC requirements for Job Mode are acceptable to the security team and define whether a pre-created ServiceAccount and Role should be provided as a separate Adhiambo manifest, or whether the operator is expected to provision this independently. | Security team |
+| 6 | Confirm the RBAC requirements for Job Mode are acceptable to the security team and define whether a pre-created ServiceAccount and Role should be provided as a separate HardenX manifest, or whether the operator is expected to provision this independently. | Security team |
 
 ---
 
